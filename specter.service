@@ -1,0 +1,30 @@
+[Unit]
+Description=Specter Security Dashboard
+Documentation=https://github.com/CarbeneAI/Specter
+After=network.target
+
+[Service]
+Type=simple
+# Replace with your actual username
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+WorkingDirectory=/path/to/Specter
+ExecStart=/path/to/Specter/manage.sh start
+ExecStop=/path/to/Specter/manage.sh stop
+Restart=on-failure
+RestartSec=10
+
+# Environment - update PATH to include bun
+Environment="HOME=/home/YOUR_USERNAME"
+Environment="PATH=/home/YOUR_USERNAME/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Optional: load environment from .env file
+# EnvironmentFile=/path/to/Specter/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=specter
+
+[Install]
+WantedBy=multi-user.target

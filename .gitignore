@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Bun
+bun.lockb
+bun.lock
+
+# Suricata local conf (generated at runtime)
+apps/server/suricata-disable.conf
