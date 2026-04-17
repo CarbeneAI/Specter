@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/banner.svg" alt="Specter Banner" width="100%">
+</p>
+
 # Specter
 
 **Real-Time SIEM Dashboard with AI-Powered Alert Analysis**
