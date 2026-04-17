@@ -2,20 +2,20 @@
   <defs>
     <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#450a0a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#172554;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="specter-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#ef4444;stop-opacity:1" />
-      <stop offset="50%" style="stop-color:#dc2626;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#f97316;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#2563eb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#60a5fa;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#cbd5e1;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="shield-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ef4444;stop-opacity:0.8" />
-      <stop offset="100%" style="stop-color:#dc2626;stop-opacity:0.4" />
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:0.4" />
     </linearGradient>
     <filter id="glow-banner">
       <feGaussianBlur stdDeviation="6" result="blur"/>
@@ -50,29 +50,29 @@
   <!-- Icon group (left side) - Shield with eye -->
   <g transform="translate(100, 40) scale(0.55)" filter="url(#glow-banner)">
     <!-- Shield outline -->
-    <path d="M 256 80 L 400 140 L 400 280 Q 400 360 256 420 Q 112 360 112 280 L 112 140 Z" fill="url(#shield-grad)" stroke="#ef4444" stroke-width="3" opacity="0.7"/>
+    <path d="M 256 80 L 400 140 L 400 280 Q 400 360 256 420 Q 112 360 112 280 L 112 140 Z" fill="url(#shield-grad)" stroke="#3b82f6" stroke-width="3" opacity="0.7"/>
 
     <!-- Inner shield -->
-    <path d="M 256 110 L 370 160 L 370 270 Q 370 335 256 385 Q 142 335 142 270 L 142 160 Z" fill="none" stroke="#ef4444" stroke-width="1.5" opacity="0.4"/>
+    <path d="M 256 110 L 370 160 L 370 270 Q 370 335 256 385 Q 142 335 142 270 L 142 160 Z" fill="none" stroke="#3b82f6" stroke-width="1.5" opacity="0.4"/>
 
     <!-- Eye symbol -->
-    <ellipse cx="256" cy="240" rx="70" ry="40" fill="none" stroke="#ef4444" stroke-width="3" opacity="0.8"/>
-    <circle cx="256" cy="240" r="20" fill="#ef4444" opacity="0.7"/>
-    <circle cx="256" cy="240" r="8" fill="#fef2f2" opacity="0.9"/>
+    <ellipse cx="256" cy="240" rx="70" ry="40" fill="none" stroke="#3b82f6" stroke-width="3" opacity="0.8"/>
+    <circle cx="256" cy="240" r="20" fill="#3b82f6" opacity="0.7"/>
+    <circle cx="256" cy="240" r="8" fill="#eff6ff" opacity="0.9"/>
 
     <!-- Scanning lines -->
-    <line x1="160" y1="180" x2="352" y2="180" stroke="#ef4444" stroke-width="1" opacity="0.3"/>
-    <line x1="160" y1="200" x2="352" y2="200" stroke="#ef4444" stroke-width="1" opacity="0.2"/>
-    <line x1="160" y1="280" x2="352" y2="280" stroke="#ef4444" stroke-width="1" opacity="0.2"/>
-    <line x1="160" y1="300" x2="352" y2="300" stroke="#ef4444" stroke-width="1" opacity="0.3"/>
+    <line x1="160" y1="180" x2="352" y2="180" stroke="#3b82f6" stroke-width="1" opacity="0.3"/>
+    <line x1="160" y1="200" x2="352" y2="200" stroke="#3b82f6" stroke-width="1" opacity="0.2"/>
+    <line x1="160" y1="280" x2="352" y2="280" stroke="#3b82f6" stroke-width="1" opacity="0.2"/>
+    <line x1="160" y1="300" x2="352" y2="300" stroke="#3b82f6" stroke-width="1" opacity="0.3"/>
 
     <!-- Alert dots -->
-    <circle cx="180" cy="170" r="4" fill="#ef4444" opacity="0.6"/>
-    <circle cx="332" cy="170" r="3" fill="#f97316" opacity="0.5"/>
-    <circle cx="190" cy="310" r="3" fill="#ef4444" opacity="0.5"/>
-    <circle cx="322" cy="310" r="4" fill="#f97316" opacity="0.6"/>
-    <circle cx="150" cy="240" r="2.5" fill="#fbbf24" opacity="0.4"/>
-    <circle cx="362" cy="240" r="2.5" fill="#fbbf24" opacity="0.4"/>
+    <circle cx="180" cy="170" r="4" fill="#3b82f6" opacity="0.6"/>
+    <circle cx="332" cy="170" r="3" fill="#60a5fa" opacity="0.5"/>
+    <circle cx="190" cy="310" r="3" fill="#3b82f6" opacity="0.5"/>
+    <circle cx="322" cy="310" r="4" fill="#60a5fa" opacity="0.6"/>
+    <circle cx="150" cy="240" r="2.5" fill="#93c5fd" opacity="0.4"/>
+    <circle cx="362" cy="240" r="2.5" fill="#93c5fd" opacity="0.4"/>
   </g>
 
   <!-- Main title -->
