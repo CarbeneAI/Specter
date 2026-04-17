@@ -26,7 +26,20 @@ Specter is a real-time security dashboard that connects to your Wazuh SIEM and S
 
 ## Screenshots
 
-_Screenshots coming soon_
+### Dashboard Overview
+Live alert feed with severity color coding and AI analysis panel.
+
+![Dashboard Overview](images/dashboard-overview.png)
+
+### AI-Powered Analysis
+Claude analyzes alerts with historical context, MITRE ATT&CK mapping, and IOC extraction.
+
+![AI Analysis](images/ai-analysis.png)
+
+### MITRE ATT&CK Mapping
+Automatic technique identification with risk levels and defensive recommendations.
+
+![MITRE Mapping](images/mitre-mapping.png)
 
 ## Tech Stack
 
