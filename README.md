@@ -154,6 +154,28 @@ Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` env vars with SSH key auth con
 
 See [docs/deployment.md](docs/deployment.md) for systemd service setup.
 
+## Roadmap
+
+Specter currently analyzes and explains alerts. The next phase is autonomous response.
+
+### AI Auto-Triage
+
+Automatically classify incoming alerts by severity and urgency. Filter noise so analysts only see what matters. Correlate related alerts into incidents instead of showing individual events.
+
+### Remediation Recommendations
+
+For each alert, generate actionable remediation steps specific to your environment — not generic advice, but commands you can run, configs you can change, and rules you can deploy.
+
+### One-Click Remediation
+
+Execute AI-recommended fixes directly from the dashboard with user approval. SSH brute force detected? One click to block the IP, harden SSH config, and verify fail2ban is active.
+
+### Autonomous Response
+
+For trusted alert patterns with known-safe remediations, let the AI act without waiting for approval — then notify you after. A SOC analyst that never sleeps and never gets alert fatigue.
+
+> **This isn't hypothetical.** The autonomous response workflow has already been tested manually — Suricata detected 1,500+ SSH brute force attempts against a production server, and Claude Code responded by hardening SSH configuration, verifying fail2ban was active, adding firewall rules, and whitelisting trusted IPs. The entire incident was handled in a single AI conversation. Specter's roadmap is about packaging that capability into the dashboard.
+
 ## Contributing
 
 Pull requests welcome. Please open an issue first to discuss major changes.
