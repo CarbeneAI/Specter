@@ -8,7 +8,7 @@ Specter is a real-time SIEM security dashboard that connects to Wazuh and Surica
 
 - **Runtime**: Bun (NOT Node.js)
 - **Language**: TypeScript
-- **Frontend**: Vue 3 + Vite + Tailwind CSS (Tokyo Night theme)
+- **Frontend**: Vue 3 + Vite + Tailwind CSS (CarbeneAI dark theme)
 - **Backend**: Bun HTTP + WebSocket server
 - **AI**: Anthropic Claude API (with tool use for Wazuh search)
 

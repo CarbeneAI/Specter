@@ -8,24 +8,25 @@ export default {
   theme: {
     extend: {
       fontFamily: {
+        "logo": ["Orbitron", "sans-serif"],
         "sans": ["Inter", "system-ui", "-apple-system", "sans-serif"],
         "mono": ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       colors: {
-        // Tokyo Night inspired palette
+        // CarbeneAI brand palette
         'bg': {
-          'primary': '#1a1b26',
-          'secondary': '#24283b',
-          'tertiary': '#414868',
+          'primary': '#0a0a12',
+          'secondary': '#1a1a2e',
+          'tertiary': '#2a2a40',
         },
         'text': {
-          'primary': '#ffffff',
+          'primary': '#f8fafc',
           'secondary': '#d1d5e8',
-          'tertiary': '#9aa1c0',
+          'tertiary': '#94a3b8',
         },
         'border': {
-          'primary': '#414868',
-          'secondary': '#565f89',
+          'primary': 'rgba(0, 212, 255, 0.2)',
+          'secondary': 'rgba(0, 212, 255, 0.4)',
         },
         // Security severity colors
         'severity': {
@@ -33,17 +34,18 @@ export default {
           'critical-bg': 'rgba(247, 118, 142, 0.15)',
           'high': '#e0af68',
           'high-bg': 'rgba(224, 175, 104, 0.15)',
-          'medium': '#bb9af7',
-          'medium-bg': 'rgba(187, 154, 247, 0.15)',
+          'medium': '#a855f7',
+          'medium-bg': 'rgba(168, 85, 247, 0.15)',
           'low': '#9ece6a',
           'low-bg': 'rgba(158, 206, 106, 0.15)',
         },
-        // Accent colors
+        // CarbeneAI accent colors
         'accent': {
-          'blue': '#7aa2f7',
-          'cyan': '#7dcfff',
+          'blue': '#00d4ff',
+          'cyan': '#00d4ff',
           'green': '#9ece6a',
-          'magenta': '#bb9af7',
+          'magenta': '#c026d3',
+          'purple': '#a855f7',
         },
       },
     },

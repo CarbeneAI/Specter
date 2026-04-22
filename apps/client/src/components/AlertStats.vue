@@ -16,10 +16,13 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex items-center justify-between px-4 py-3 bg-bg-secondary border-b border-border-primary">
+  <div class="flex items-center justify-between px-4 py-3 bg-bg-secondary border-b border-border-primary shadow-[0_1px_10px_rgba(0,212,255,0.05)]">
     <!-- Left: Title and connection status -->
     <div class="flex items-center gap-3">
-      <h1 class="text-lg font-semibold text-text-primary">Specter Security Dashboard</h1>
+      <h1 class="text-lg font-semibold text-text-primary">
+        <span class="font-logo tracking-wider bg-gradient-to-r from-accent-blue to-accent-purple bg-clip-text text-transparent">SPECTER</span>
+        <span class="text-text-tertiary font-normal text-sm ml-2">Security Dashboard</span>
+      </h1>
       <div class="flex items-center gap-1.5">
         <span
           class="w-2 h-2 rounded-full"

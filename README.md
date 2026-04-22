@@ -15,31 +15,47 @@ Specter is a real-time security dashboard that connects to your Wazuh SIEM and S
 ## Features
 
 - **Live Alert Streaming** - WebSocket-based real-time alert feed from Wazuh Indexer (polls every 30s)
-- **Severity Color Coding** - Tokyo Night dark theme with Critical/High/Medium/Low visual hierarchy
+- **Severity Color Coding** - CarbeneAI dark theme with Critical/High/Medium/Low visual hierarchy
 - **AI Security Analyst** - Claude-powered chat that autonomously searches Wazuh for historical context
 - **Alert Suppression** - Suppress noisy Suricata SIDs or Wazuh rules directly from the UI
 - **Alert Filtering** - Filter by severity, agent, and rule group
 - **Resizable Split-Screen** - Drag to resize the alert feed and chat panel
-- **MITRE ATT&CK** - Displays MITRE technique IDs inline on each alert
+- **MITRE ATT&CK Mapping** - Full attack chain mapping with technique IDs, detection opportunities, and ATT&CK Navigator heatmaps
+- **MITRE D3FEND Countermeasures** - Defensive technique recommendations mapped to detected threats (Detect, Isolate, Deceive)
 - **Compliance Tags** - PCI DSS, HIPAA, GDPR, NIST 800-53 tags on alerts
 - **HTTP Ingest** - Accept alerts via POST endpoint (useful with n8n webhooks)
 
 ## Screenshots
 
 ### Dashboard Overview
-Live alert feed with severity color coding and AI analysis panel.
+Live alert feed with severity color coding and AI-powered risk analysis.
 
 ![Dashboard Overview](images/dashboard-overview.png)
 
-### AI-Powered Analysis
-Claude analyzes alerts with historical context, MITRE ATT&CK mapping, and IOC extraction.
+### AI-Powered Remediation
+Claude provides prioritized remediation steps with compliance framework references and implementation timelines.
 
 ![AI Analysis](images/ai-analysis.png)
 
+### AI Security Analyst
+Success metrics, KPIs, and priority implementation orders tailored to your environment.
+
+![AI Remediation](images/ai-remediation.png)
+
 ### MITRE ATT&CK Mapping
-Automatic technique identification with risk levels and defensive recommendations.
+Complete attack chain mapping with technique identification across reconnaissance, initial access, and brute force phases.
 
 ![MITRE Mapping](images/mitre-mapping.png)
+
+### MITRE D3FEND Countermeasures
+Defensive technique recommendations mapped to detected threats, including detection, isolation, and deception strategies with ATT&CK Navigator heatmaps.
+
+![MITRE D3FEND](images/mitre-defend.png)
+
+### Detection Opportunities
+Data source identification, pseudo-detection rule generation, and attack pattern relationship mapping.
+
+![Detection Opportunities](images/detection-opportunities.png)
 
 ## Tech Stack
 
@@ -49,7 +65,7 @@ Automatic technique identification with risk levels and defensive recommendation
 | Frontend | Vue 3 + Vite + Tailwind CSS |
 | Backend | Bun HTTP + WebSocket server |
 | AI | Anthropic Claude API (tool use) |
-| Theme | Tokyo Night dark |
+| Theme | CarbeneAI dark (cyan/purple) |
 | Icons | Lucide Vue |
 
 ## Requirements
@@ -113,7 +129,7 @@ When you click an alert and use the chat panel:
 1. The selected alert is included as context in the system prompt
 2. Claude can call `search_wazuh_alerts` tool to query your Wazuh Indexer for historical data
 3. Up to 3 tool call iterations for deep correlation
-4. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE mapping
+4. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE ATT&CK/D3FEND mapping
 
 ## Alert Suppression
 

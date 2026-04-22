@@ -1,21 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400">
   <defs>
     <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#172554;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#0a0a12;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="specter-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-      <stop offset="50%" style="stop-color:#2563eb;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#60a5fa;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a855f7;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#cbd5e1;stop-opacity:1" />
     </linearGradient>
     <linearGradient id="shield-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.8" />
-      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:0.4" />
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#a855f7;stop-opacity:0.4" />
+    </linearGradient>
+    <linearGradient id="cyan-purple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#a855f7;stop-opacity:1" />
     </linearGradient>
     <filter id="glow-banner">
       <feGaussianBlur stdDeviation="6" result="blur"/>
@@ -24,73 +27,82 @@
     <filter id="text-shadow">
       <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.3"/>
     </filter>
+    <filter id="cyan-glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#00d4ff" flood-opacity="0.3" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
 
   <!-- Background -->
   <rect width="1200" height="400" fill="url(#bg-grad)"/>
 
   <!-- Subtle grid pattern -->
-  <g opacity="0.03">
-    <line x1="0" y1="0" x2="0" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="60" y1="0" x2="60" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="120" y1="0" x2="120" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="180" y1="0" x2="180" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="240" y1="0" x2="240" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="300" y1="0" x2="300" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="360" y1="0" x2="360" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="420" y1="0" x2="420" y2="400" stroke="white" stroke-width="1"/>
-    <line x1="0" y1="60" x2="1200" y2="60" stroke="white" stroke-width="1"/>
-    <line x1="0" y1="120" x2="1200" y2="120" stroke="white" stroke-width="1"/>
-    <line x1="0" y1="180" x2="1200" y2="180" stroke="white" stroke-width="1"/>
-    <line x1="0" y1="240" x2="1200" y2="240" stroke="white" stroke-width="1"/>
-    <line x1="0" y1="300" x2="1200" y2="300" stroke="white" stroke-width="1"/>
-    <line x1="0" y1="360" x2="1200" y2="360" stroke="white" stroke-width="1"/>
+  <g opacity="0.04">
+    <line x1="0" y1="0" x2="0" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="60" y1="0" x2="60" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="120" y1="0" x2="120" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="180" y1="0" x2="180" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="240" y1="0" x2="240" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="300" y1="0" x2="300" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="360" y1="0" x2="360" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="420" y1="0" x2="420" y2="400" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="0" y1="60" x2="1200" y2="60" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="0" y1="120" x2="1200" y2="120" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="0" y1="180" x2="1200" y2="180" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="0" y1="240" x2="1200" y2="240" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="0" y1="300" x2="1200" y2="300" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="0" y1="360" x2="1200" y2="360" stroke="#00d4ff" stroke-width="1"/>
   </g>
 
   <!-- Icon group (left side) - Shield with eye -->
   <g transform="translate(100, 40) scale(0.55)" filter="url(#glow-banner)">
     <!-- Shield outline -->
-    <path d="M 256 80 L 400 140 L 400 280 Q 400 360 256 420 Q 112 360 112 280 L 112 140 Z" fill="url(#shield-grad)" stroke="#3b82f6" stroke-width="3" opacity="0.7"/>
+    <path d="M 256 80 L 400 140 L 400 280 Q 400 360 256 420 Q 112 360 112 280 L 112 140 Z" fill="url(#shield-grad)" stroke="url(#cyan-purple)" stroke-width="3" opacity="0.7"/>
 
     <!-- Inner shield -->
-    <path d="M 256 110 L 370 160 L 370 270 Q 370 335 256 385 Q 142 335 142 270 L 142 160 Z" fill="none" stroke="#3b82f6" stroke-width="1.5" opacity="0.4"/>
+    <path d="M 256 110 L 370 160 L 370 270 Q 370 335 256 385 Q 142 335 142 270 L 142 160 Z" fill="none" stroke="#00d4ff" stroke-width="1.5" opacity="0.4"/>
 
     <!-- Eye symbol -->
-    <ellipse cx="256" cy="240" rx="70" ry="40" fill="none" stroke="#3b82f6" stroke-width="3" opacity="0.8"/>
-    <circle cx="256" cy="240" r="20" fill="#3b82f6" opacity="0.7"/>
-    <circle cx="256" cy="240" r="8" fill="#eff6ff" opacity="0.9"/>
+    <ellipse cx="256" cy="240" rx="70" ry="40" fill="none" stroke="url(#cyan-purple)" stroke-width="3" opacity="0.8"/>
+    <circle cx="256" cy="240" r="20" fill="#00d4ff" opacity="0.7"/>
+    <circle cx="256" cy="240" r="8" fill="#f8fafc" opacity="0.9"/>
 
     <!-- Scanning lines -->
-    <line x1="160" y1="180" x2="352" y2="180" stroke="#3b82f6" stroke-width="1" opacity="0.3"/>
-    <line x1="160" y1="200" x2="352" y2="200" stroke="#3b82f6" stroke-width="1" opacity="0.2"/>
-    <line x1="160" y1="280" x2="352" y2="280" stroke="#3b82f6" stroke-width="1" opacity="0.2"/>
-    <line x1="160" y1="300" x2="352" y2="300" stroke="#3b82f6" stroke-width="1" opacity="0.3"/>
+    <line x1="160" y1="180" x2="352" y2="180" stroke="#00d4ff" stroke-width="1" opacity="0.3"/>
+    <line x1="160" y1="200" x2="352" y2="200" stroke="#a855f7" stroke-width="1" opacity="0.2"/>
+    <line x1="160" y1="280" x2="352" y2="280" stroke="#a855f7" stroke-width="1" opacity="0.2"/>
+    <line x1="160" y1="300" x2="352" y2="300" stroke="#00d4ff" stroke-width="1" opacity="0.3"/>
 
     <!-- Alert dots -->
-    <circle cx="180" cy="170" r="4" fill="#3b82f6" opacity="0.6"/>
-    <circle cx="332" cy="170" r="3" fill="#60a5fa" opacity="0.5"/>
-    <circle cx="190" cy="310" r="3" fill="#3b82f6" opacity="0.5"/>
-    <circle cx="322" cy="310" r="4" fill="#60a5fa" opacity="0.6"/>
-    <circle cx="150" cy="240" r="2.5" fill="#93c5fd" opacity="0.4"/>
-    <circle cx="362" cy="240" r="2.5" fill="#93c5fd" opacity="0.4"/>
+    <circle cx="180" cy="170" r="4" fill="#00d4ff" opacity="0.6"/>
+    <circle cx="332" cy="170" r="3" fill="#a855f7" opacity="0.5"/>
+    <circle cx="190" cy="310" r="3" fill="#00d4ff" opacity="0.5"/>
+    <circle cx="322" cy="310" r="4" fill="#a855f7" opacity="0.6"/>
+    <circle cx="150" cy="240" r="2.5" fill="#c026d3" opacity="0.4"/>
+    <circle cx="362" cy="240" r="2.5" fill="#c026d3" opacity="0.4"/>
   </g>
 
   <!-- Main title -->
-  <text x="460" y="195" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="120" fill="url(#text-grad)" filter="url(#text-shadow)" letter-spacing="8">SPECTER</text>
+  <text x="460" y="195" font-family="Orbitron, system-ui, sans-serif" font-weight="800" font-size="120" fill="url(#text-grad)" filter="url(#text-shadow)" letter-spacing="8">SPECTER</text>
 
   <!-- Tagline -->
-  <text x="464" y="245" font-family="system-ui, -apple-system, sans-serif" font-weight="400" font-size="24" fill="#94a3b8" letter-spacing="6">AI SECURITY MONITORING</text>
+  <text x="464" y="245" font-family="Orbitron, system-ui, sans-serif" font-weight="400" font-size="24" fill="#94a3b8" letter-spacing="6">AI SECURITY MONITORING</text>
 
-  <!-- Divider line -->
-  <line x1="464" y1="265" x2="700" y2="265" stroke="url(#specter-grad)" stroke-width="2" opacity="0.4"/>
+  <!-- Divider line with CarbeneAI gradient -->
+  <line x1="464" y1="265" x2="700" y2="265" stroke="url(#specter-grad)" stroke-width="2" opacity="0.6"/>
 
   <!-- Description -->
-  <text x="464" y="300" font-family="system-ui, -apple-system, sans-serif" font-weight="300" font-size="18" fill="#64748b">AI-driven SIEM dashboard with intelligent alert triage</text>
-  <text x="464" y="328" font-family="system-ui, -apple-system, sans-serif" font-weight="300" font-size="18" fill="#64748b">Wazuh + Suricata  |  Claude AI analysis  |  Real-time feeds</text>
+  <text x="464" y="300" font-family="Inter, system-ui, sans-serif" font-weight="300" font-size="18" fill="#94a3b8">AI-driven SIEM dashboard with intelligent alert triage</text>
+  <text x="464" y="328" font-family="Inter, system-ui, sans-serif" font-weight="300" font-size="18" fill="#94a3b8">Wazuh + Suricata  |  Claude AI analysis  |  Real-time feeds</text>
 
   <!-- CarbeneAI badge -->
   <g transform="translate(464, 350)">
-    <rect width="160" height="30" rx="15" fill="none" stroke="#475569" stroke-width="1"/>
-    <text x="80" y="20" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="500" font-size="12" fill="#94a3b8" letter-spacing="2">BY CARBENEAI</text>
+    <rect width="160" height="30" rx="15" fill="none" stroke="url(#cyan-purple)" stroke-width="1" opacity="0.6"/>
+    <text x="80" y="20" text-anchor="middle" font-family="Orbitron, system-ui, sans-serif" font-weight="500" font-size="11" fill="url(#cyan-purple)" letter-spacing="2">BY CARBENEAI</text>
   </g>
 </svg>
