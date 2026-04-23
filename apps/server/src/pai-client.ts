@@ -551,5 +551,5 @@ export const QUICK_PROMPTS = {
   remediation: 'What are the recommended remediation steps for this alert?',
   related: 'What other types of attacks or alerts might be related to this? What should I look for?',
   ioc: 'What are the key indicators of compromise (IOCs) from this alert that I should add to my blocklist or monitoring?',
-  mitre: 'Map this alert to the MITRE ATT&CK framework. What tactics and techniques are involved?',
+  mitre: 'Map this alert to the MITRE ATT&CK framework. What tactics and techniques are involved? Then provide MITRE D3FEND countermeasures — what defensive techniques (Detect, Isolate, Deceive, Evict) should be applied to counter each identified ATT&CK technique? Finally, list Detection Opportunities — what data sources, log types, and detection rules would catch this attack pattern, and provide pseudo-detection logic or Sigma-style rules where applicable.',
 };
