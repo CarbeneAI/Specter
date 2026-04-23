@@ -31,34 +31,34 @@ Specter is a real-time security dashboard that connects to your Wazuh SIEM and S
 ## Screenshots
 
 ### Dashboard Overview
-Live alert feed with severity color coding and AI-powered risk analysis.
+Live alert feed with severity color coding, alert suppression, and the AI chat panel.
 
 ![Dashboard Overview](images/dashboard-overview.png)
 
-### AI-Powered Remediation
-Claude provides prioritized remediation steps with compliance framework references and implementation timelines.
+### Cloud/Local AI Toggle
+Switch between Anthropic Claude (cloud) and Ollama (local) with one click. Configure your Ollama URL and model in the settings panel. Data stays on your network.
+
+![Ollama Settings](images/ollama-settings.png)
+
+### AI-Powered Analysis
+The AI walks analysts through structured triage: What is this? Why does it matter? How do I know? Markdown rendering with headers, code blocks, and formatted lists.
 
 ![AI Analysis](images/ai-analysis.png)
 
-### AI Security Analyst
-Success metrics, KPIs, and priority implementation orders tailored to your environment.
+### AI Remediation
+Prioritized remediation steps with exact commands, compliance references, and escalation guidance.
 
 ![AI Remediation](images/ai-remediation.png)
 
+### IOC Analysis
+Indicator of compromise extraction with severity-based escalation and attack pattern identification.
+
+![IOC Analysis](images/ai-ioc-analysis.png)
+
 ### MITRE ATT&CK Mapping
-Complete attack chain mapping with technique identification across reconnaissance, initial access, and brute force phases.
+Complete attack chain mapping with technique identification, tactic classification, and detection opportunities.
 
 ![MITRE Mapping](images/mitre-mapping.png)
-
-### MITRE D3FEND Countermeasures
-Defensive technique recommendations mapped to detected threats, including detection, isolation, and deception strategies with ATT&CK Navigator heatmaps.
-
-![MITRE D3FEND](images/mitre-defend.png)
-
-### Detection Opportunities
-Data source identification, pseudo-detection rule generation, and attack pattern relationship mapping.
-
-![Detection Opportunities](images/detection-opportunities.png)
 
 ## Tech Stack
 
