@@ -60,6 +60,16 @@ Complete attack chain mapping with technique identification, tactic classificati
 
 ![MITRE Mapping](images/mitre-mapping.png)
 
+### MITRE D3FEND Countermeasures
+Defensive technique recommendations mapped to detected threats, including detection, isolation, and deception strategies with ATT&CK Navigator heatmaps.
+
+![MITRE D3FEND](images/mitre-defend.png)
+
+### Detection Opportunities
+Data source identification, pseudo-detection rule generation, and attack pattern relationship mapping.
+
+![Detection Opportunities](images/detection-opportunities.png)
+
 ## Tech Stack
 
 | Component | Technology |
