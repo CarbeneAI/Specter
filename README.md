@@ -16,7 +16,10 @@ Specter is a real-time security dashboard that connects to your Wazuh SIEM and S
 
 - **Live Alert Streaming** - WebSocket-based real-time alert feed from Wazuh Indexer (polls every 30s)
 - **Severity Color Coding** - CarbeneAI dark theme with Critical/High/Medium/Low visual hierarchy
-- **AI Security Analyst** - Claude-powered chat that autonomously searches Wazuh for historical context
+- **AI Security Analyst** - AI-powered chat that autonomously searches Wazuh for historical context
+- **Cloud/Local AI Toggle** - Switch between Anthropic Claude (cloud) and Ollama (local) with one click. Keep sensitive SIEM data on your network.
+- **Analyst Guidance Mode** - AI responses are structured to mentor junior analysts: What is this? Why does it matter? How do I know? What do I do next? What should I watch for?
+- **Markdown Rendering** - AI responses render with full markdown: headers, bold, code blocks, lists, and blockquotes via marked.js
 - **Alert Suppression** - Suppress noisy Suricata SIDs or Wazuh rules directly from the UI
 - **Alert Filtering** - Filter by severity, agent, and rule group
 - **Resizable Split-Screen** - Drag to resize the alert feed and chat panel
@@ -64,7 +67,7 @@ Data source identification, pseudo-detection rule generation, and attack pattern
 | Runtime | Bun |
 | Frontend | Vue 3 + Vite + Tailwind CSS |
 | Backend | Bun HTTP + WebSocket server |
-| AI | Anthropic Claude API (tool use) |
+| AI | Anthropic Claude API (tool use) or Ollama (local) |
 | Theme | CarbeneAI dark (cyan/purple) |
 | Icons | Lucide Vue |
 
@@ -72,7 +75,7 @@ Data source identification, pseudo-detection rule generation, and attack pattern
 
 - [Bun](https://bun.sh) v1.0+
 - Wazuh SIEM instance (self-hosted)
-- [Anthropic API key](https://console.anthropic.com) (for AI chat)
+- [Anthropic API key](https://console.anthropic.com) (for cloud AI chat) **or** [Ollama](https://ollama.com) (for local AI)
 - SSH access to Suricata/Wazuh hosts (optional, for rule suppression)
 
 ## Quick Start
@@ -127,9 +130,24 @@ See [docs/setup.md](docs/setup.md) for complete setup instructions including:
 When you click an alert and use the chat panel:
 
 1. The selected alert is included as context in the system prompt
-2. Claude can call `search_wazuh_alerts` tool to query your Wazuh Indexer for historical data
-3. Up to 3 tool call iterations for deep correlation
-4. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE ATT&CK/D3FEND mapping
+2. The AI structures responses to guide analyst thinking (What/Why/How/Next/Watch)
+3. Claude can call `search_wazuh_alerts` tool to query your Wazuh Indexer for historical data (cloud mode)
+4. Up to 3 tool call iterations for deep correlation
+5. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE ATT&CK/D3FEND mapping
+
+### Cloud vs Local AI
+
+Use the **Cloud/Local toggle** in the chat panel header to switch providers:
+
+| | Cloud (Anthropic) | Local (Ollama) |
+|---|---|---|
+| **Model** | Claude Sonnet | Any Ollama model (llama3.1, gemma4, etc.) |
+| **Data privacy** | Sent to Anthropic API | Stays on your network |
+| **Wazuh search** | Autonomous tool use | Not available |
+| **Speed** | Fast | Depends on model size and hardware |
+| **Cost** | API usage fees | Free (your hardware) |
+
+**Ollama setup**: Click the gear icon when Local is selected to configure the Ollama URL and select a model. Settings persist across sessions. Smaller models (8B) respond in seconds; larger models (30B+) may take over a minute.
 
 ## Alert Suppression
 
@@ -154,6 +172,7 @@ Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` env vars with SSH key auth con
 | POST | `/alerts/search` | Search Wazuh Indexer |
 | POST | `/alerts/suppress` | Suppress a rule |
 | GET | `/alerts/suppressed` | List suppressed rules |
+| GET | `/settings/ollama-models?ollamaUrl=...` | List available Ollama models |
 | WS | `/stream` | Real-time alert stream |
 
 ## Manage Script

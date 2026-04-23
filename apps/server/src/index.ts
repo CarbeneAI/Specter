@@ -1,5 +1,5 @@
 /**
- * Specter - Security Dashboard Server
+ * Wazuh Security Dashboard Server
  * HTTP API + WebSocket server for real-time alert streaming
  */
 
@@ -12,10 +12,8 @@ import {
   filterAlerts,
   addAlerts,
 } from './alert-ingest';
-import { sendChatMessage, searchWazuhAlerts, QUICK_PROMPTS } from './pai-client';
+import { sendChatMessage, searchWazuhAlerts, getOllamaModels, QUICK_PROMPTS } from './pai-client';
 import { suppressSuricataRule, getSuppressedSIDs } from './suricata-suppression';
-
-const PORT = parseInt(process.env.PORT || '4001');
 
 // Store WebSocket clients
 const wsClients = new Set<any>();
@@ -48,7 +46,7 @@ startAlertIngestion((alerts) => {
 
 // Create Bun server with HTTP and WebSocket support
 const server = Bun.serve({
-  port: PORT,
+  port: 4001,
 
   async fetch(req: Request) {
     const url = new URL(req.url);
@@ -110,7 +108,7 @@ const server = Bun.serve({
       });
     }
 
-    // POST /alerts/ingest - Receive alerts via HTTP POST (n8n webhook, etc.)
+    // POST /alerts/ingest - Receive alerts from n8n webhook
     if (url.pathname === '/alerts/ingest' && req.method === 'POST') {
       try {
         const body = await req.json();
@@ -141,11 +139,11 @@ const server = Bun.serve({
       }
     }
 
-    // POST /chat - Send message to AI analyst
+    // POST /chat - Send message to PAI
     if (url.pathname === '/chat' && req.method === 'POST') {
       try {
         const body = await req.json();
-        const { message, history = [], alertContext, sessionId } = body;
+        const { message, history = [], alertContext, sessionId, provider, ollamaUrl, ollamaModel } = body;
 
         if (!message) {
           return new Response(
@@ -154,7 +152,7 @@ const server = Bun.serve({
           );
         }
 
-        const response = await sendChatMessage(message, history, alertContext, sessionId);
+        const response = await sendChatMessage(message, history, alertContext, sessionId, provider, ollamaUrl, ollamaModel);
         return new Response(JSON.stringify(response), {
           headers: { ...headers, 'Content-Type': 'application/json' },
         });
@@ -235,6 +233,15 @@ const server = Bun.serve({
       });
     }
 
+    // GET /settings/ollama-models - Fetch available Ollama models
+    if (url.pathname === '/settings/ollama-models' && req.method === 'GET') {
+      const ollamaUrl = url.searchParams.get('ollamaUrl') || 'http://localhost:11434';
+      const models = await getOllamaModels(ollamaUrl);
+      return new Response(JSON.stringify({ models }), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
     // WebSocket upgrade
     if (url.pathname === '/stream') {
       const success = server.upgrade(req);
@@ -244,7 +251,7 @@ const server = Bun.serve({
     }
 
     // Default response
-    return new Response('Specter Security Dashboard Server', {
+    return new Response('Wazuh Security Dashboard Server', {
       headers: { ...headers, 'Content-Type': 'text/plain' },
     });
   },
@@ -290,6 +297,6 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Specter Dashboard Server running on http://localhost:${server.port}`);
+console.log(`Wazuh Dashboard Server running on http://localhost:${server.port}`);
 console.log(`WebSocket endpoint: ws://localhost:${server.port}/stream`);
 console.log(`Health check: http://localhost:${server.port}/health`);

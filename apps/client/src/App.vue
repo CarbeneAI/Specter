@@ -7,7 +7,7 @@ import ToastContainer from './components/Toast.vue';
 import { useWebSocket } from './composables/useWebSocket';
 import { usePAIChat } from './composables/usePAIChat';
 import { useToast } from './composables/useToast';
-import type { WazuhAlert, AlertStats as AlertStatsType, SeverityLevel, QuickPrompts } from './types';
+import type { WazuhAlert, AlertStats as AlertStatsType, SeverityLevel, QuickPrompts, AIProvider } from './types';
 
 // WebSocket connection for alerts
 const { alerts, stats, isConnected, requestFilter } = useWebSocket();
@@ -15,8 +15,15 @@ const { alerts, stats, isConnected, requestFilter } = useWebSocket();
 // Toast notifications
 const toast = useToast();
 
-// API URL for suppress calls - uses env var or defaults to localhost
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4001';
+// API URL for suppress calls
+function getApiUrl(): string {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:4001';
+  }
+  return 'https://wazuh-dashboard-api.home.carbeneai.com';
+}
+const API_URL = getApiUrl();
 
 // Suppressed rule IDs - fetched on mount, updated after each suppress
 const suppressedWazuhIds = ref<Set<string>>(new Set());
@@ -93,7 +100,7 @@ const visibleStats = computed<AlertStatsType>(() => {
   return s;
 });
 
-// AI chat
+// PAI chat
 const {
   messages,
   isLoading,
@@ -101,8 +108,24 @@ const {
   quickPrompts,
   sendMessage,
   quickAction,
-  clearChat
+  clearChat,
+  provider,
+  providerConfig,
+  setProvider,
+  setOllamaConfig,
+  loadOllamaModels,
 } = usePAIChat();
+
+// Handle provider change
+const handleSetProvider = (p: AIProvider) => {
+  setProvider(p);
+};
+
+// Handle Ollama config change
+const handleSetOllamaConfig = (url: string, model: string) => {
+  setOllamaConfig(url, model);
+  loadOllamaModels();
+};
 
 // Selected alert for context
 const selectedAlert = ref<WazuhAlert | null>(null);
@@ -252,7 +275,7 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
         <div class="absolute inset-y-0 -left-1 -right-1" />
       </div>
 
-      <!-- Right panel - AI Chat -->
+      <!-- Right panel - PAI Chat -->
       <div class="overflow-hidden" :style="rightPanelStyle">
         <ChatPanel
           :messages="messages"
@@ -260,9 +283,13 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
           :error="error"
           :quick-prompts="quickPrompts"
           :selected-alerts="selectedAlerts"
+          :provider="provider"
+          :provider-config="providerConfig"
           @send="handleSendMessage"
           @quick-action="handleQuickAction"
           @clear="clearChat"
+          @set-provider="handleSetProvider"
+          @set-ollama-config="handleSetOllamaConfig"
         />
       </div>
     </div>

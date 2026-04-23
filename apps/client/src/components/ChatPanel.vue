@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue';
+import { marked } from 'marked';
 import {
   Send,
   Trash2,
@@ -10,9 +11,24 @@ import {
   Shield,
   Search,
   Target,
-  Map
+  Map,
+  Cloud,
+  Server,
+  Settings,
+  Save,
+  Check,
 } from 'lucide-vue-next';
-import type { WazuhAlert, ChatMessage, QuickPrompts } from '../types';
+import type { WazuhAlert, ChatMessage, QuickPrompts, AIProvider, AIProviderConfig } from '../types';
+
+// Configure marked for security analyst output
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
+const renderMarkdown = (content: string): string => {
+  return marked.parse(content) as string;
+};
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -20,13 +36,32 @@ const props = defineProps<{
   error: string | null;
   quickPrompts: QuickPrompts | null;
   selectedAlerts: WazuhAlert[];
+  provider: AIProvider;
+  providerConfig: AIProviderConfig;
 }>();
 
 const emit = defineEmits<{
   (e: 'send', message: string): void;
   (e: 'quickAction', action: keyof QuickPrompts): void;
   (e: 'clear'): void;
+  (e: 'setProvider', provider: AIProvider): void;
+  (e: 'setOllamaConfig', url: string, model: string): void;
 }>();
+
+const showSettings = ref(false);
+const editOllamaUrl = ref(props.providerConfig.ollamaUrl);
+const editOllamaModel = ref(props.providerConfig.ollamaModel);
+const settingsSaved = ref(false);
+
+// Sync local edits when props change (e.g. model list loaded)
+watch(() => props.providerConfig.ollamaModel, (v) => { editOllamaModel.value = v; });
+watch(() => props.providerConfig.ollamaUrl, (v) => { editOllamaUrl.value = v; });
+
+const saveSettings = () => {
+  emit('setOllamaConfig', editOllamaUrl.value, editOllamaModel.value);
+  settingsSaved.value = true;
+  setTimeout(() => { settingsSaved.value = false; }, 2000);
+};
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const messagesRef = ref<HTMLDivElement | null>(null);
@@ -87,16 +122,100 @@ const quickActions = [
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <Bot class="w-5 h-5 text-accent-blue" />
-          <h2 class="font-medium text-text-primary">AI Security Analyst</h2>
+          <h2 class="font-medium text-text-primary">PAI Security Analyst</h2>
         </div>
-        <button
-          v-if="messages.length > 0"
-          class="btn-ghost p-1 rounded"
-          title="Clear chat"
-          @click="emit('clear')"
-        >
-          <Trash2 class="w-4 h-4" />
-        </button>
+        <div class="flex items-center gap-2">
+          <!-- AI Provider Toggle -->
+          <div class="flex items-center gap-1 bg-bg-secondary rounded-full p-0.5">
+            <button
+              class="flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors"
+              :class="provider === 'anthropic'
+                ? 'bg-accent-blue text-white'
+                : 'text-text-tertiary hover:text-text-secondary'"
+              title="Cloud AI (Anthropic Claude)"
+              @click="emit('setProvider', 'anthropic')"
+            >
+              <Cloud class="w-3 h-3" />
+              <span>Cloud</span>
+            </button>
+            <button
+              class="flex items-center gap-1 px-2 py-1 rounded-full text-xs transition-colors"
+              :class="provider === 'ollama'
+                ? 'bg-accent-green text-bg-primary'
+                : 'text-text-tertiary hover:text-text-secondary'"
+              title="Local AI (Ollama)"
+              @click="emit('setProvider', 'ollama')"
+            >
+              <Server class="w-3 h-3" />
+              <span>Local</span>
+            </button>
+          </div>
+          <!-- Settings gear (for Ollama config) -->
+          <button
+            v-if="provider === 'ollama'"
+            class="btn-ghost p-1 rounded"
+            title="Ollama settings"
+            @click="showSettings = !showSettings"
+          >
+            <Settings class="w-4 h-4" />
+          </button>
+          <button
+            v-if="messages.length > 0"
+            class="btn-ghost p-1 rounded"
+            title="Clear chat"
+            @click="emit('clear')"
+          >
+            <Trash2 class="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Ollama Settings Panel -->
+      <div v-if="showSettings && provider === 'ollama'" class="mt-2 p-3 bg-bg-secondary rounded border border-border-primary space-y-2">
+        <div>
+          <label class="text-xs text-text-tertiary block mb-1">Ollama URL</label>
+          <input
+            type="text"
+            class="input text-xs w-full"
+            v-model="editOllamaUrl"
+            placeholder="http://localhost:11434"
+          />
+        </div>
+        <div>
+          <label class="text-xs text-text-tertiary block mb-1">Model</label>
+          <select
+            v-if="providerConfig.availableModels.length > 0"
+            class="input text-xs w-full"
+            v-model="editOllamaModel"
+          >
+            <option v-for="model in providerConfig.availableModels" :key="model" :value="model">
+              {{ model }}
+            </option>
+          </select>
+          <input
+            v-else
+            type="text"
+            class="input text-xs w-full"
+            v-model="editOllamaModel"
+            placeholder="llama3.1, qwen2.5, etc."
+          />
+        </div>
+        <div class="flex items-center justify-between">
+          <p class="text-xs text-text-tertiary">
+            <Server class="w-3 h-3 inline" /> Data stays on your network
+          </p>
+          <button
+            class="flex items-center gap-1 px-3 py-1.5 text-xs rounded border transition-colors"
+            :class="settingsSaved
+              ? 'border-accent-green text-accent-green'
+              : 'border-accent-blue text-accent-blue hover:bg-accent-blue/10'"
+            @click="saveSettings"
+          >
+            <Check v-if="settingsSaved" class="w-3 h-3" />
+            <Save v-else class="w-3 h-3" />
+            {{ settingsSaved ? 'Saved' : 'Save' }}
+          </button>
+        </div>
       </div>
 
       <!-- Selected alert context -->
@@ -146,7 +265,13 @@ const quickActions = [
               ? 'bg-accent-blue text-white'
               : 'bg-bg-secondary text-text-primary'"
           >
-            <p class="text-sm whitespace-pre-wrap">{{ msg.content }}</p>
+            <!-- Markdown rendering for assistant, plain text for user -->
+            <div
+              v-if="msg.role === 'assistant'"
+              class="text-sm prose prose-invert prose-sm max-w-none"
+              v-html="renderMarkdown(msg.content)"
+            />
+            <p v-else class="text-sm whitespace-pre-wrap">{{ msg.content }}</p>
             <span class="text-xs opacity-60 mt-1 block">
               {{ formatTime(msg.timestamp) }}
             </span>

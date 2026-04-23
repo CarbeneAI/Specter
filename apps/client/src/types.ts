@@ -1,5 +1,5 @@
 /**
- * Specter Dashboard Client Types
+ * Wazuh Dashboard Client Types
  */
 
 export interface WazuhAlert {
@@ -86,6 +86,15 @@ export interface QuickPrompts {
   related: string;
   ioc: string;
   mitre: string;
+}
+
+export type AIProvider = 'anthropic' | 'ollama';
+
+export interface AIProviderConfig {
+  provider: AIProvider;
+  ollamaUrl: string;
+  ollamaModel: string;
+  availableModels: string[];
 }
 
 /**

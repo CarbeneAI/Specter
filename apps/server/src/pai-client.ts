@@ -1,18 +1,21 @@
 /**
- * AI Chat Client
- * Sends chat messages to Claude for security alert analysis
- * Includes Wazuh Indexer search tool for autonomous historical alert queries
+ * PAI API Client
+ * Sends chat messages to PAI for security alert analysis
+ * Includes Wazuh Indexer search tool for Claude to query historical alerts
  */
 
+import { homedir } from 'os';
 import type { WazuhAlert, PAIChatMessage, PAIChatResponse } from './types';
 
-// Wazuh Dashboard API configuration (same as alert-ingest.ts)
-const WAZUH_DASHBOARD_URL = process.env.WAZUH_DASHBOARD_URL;
-const WAZUH_DASHBOARD_USER = process.env.WAZUH_DASHBOARD_USER || 'admin';
-const WAZUH_DASHBOARD_PASSWORD = process.env.WAZUH_DASHBOARD_PASSWORD;
+type AIProvider = 'anthropic' | 'ollama';
 
-// Anthropic API key - required for AI chat features
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// PAI API configuration
+const PAI_API_URL = process.env.PAI_API_URL || 'http://192.168.2.81:3001/v1/messages';
+
+// Wazuh Dashboard API configuration (same as alert-ingest.ts)
+const WAZUH_DASHBOARD_URL = process.env.WAZUH_DASHBOARD_URL || 'https://192.168.2.76';
+const WAZUH_DASHBOARD_USER = process.env.WAZUH_DASHBOARD_USER || 'admin';
+const WAZUH_DASHBOARD_PASSWORD = process.env.WAZUH_DASHBOARD_PASSWORD || 'rf0mmVkJkOfLJgT201YrCk*+fKN40U+e';
 
 // Tool definition for Anthropic API
 const SEARCH_TOOL = {
@@ -35,20 +38,32 @@ const SEARCH_TOOL = {
 const MAX_TOOL_CALLS = 3;
 
 /**
- * Get Anthropic API key - requires environment variable
+ * Load API key from environment file
  */
-function getApiKey(): string {
-  if (ANTHROPIC_API_KEY) {
-    return ANTHROPIC_API_KEY;
+async function getApiKey(): Promise<string> {
+  // First check environment variable
+  if (process.env.WAZUH_PAI_API_KEY) {
+    return process.env.WAZUH_PAI_API_KEY;
   }
-  throw new Error(
-    'ANTHROPIC_API_KEY environment variable is required for AI chat features. ' +
-    'Set it in your .env file or environment.'
-  );
+
+  // Fall back to loading from .env file
+  const envPath = `${homedir()}/.claude/.env`;
+
+  try {
+    const envFile = await Bun.file(envPath).text();
+    const match = envFile.match(/(?:ANTHROPIC_API_KEY|WAZUH_PAI_API_KEY)=(.+)/);
+    if (match) {
+      return match[1].trim();
+    }
+  } catch (err) {
+    console.error('Failed to read API key from .env:', err);
+  }
+
+  throw new Error('No API key found - set WAZUH_PAI_API_KEY or ANTHROPIC_API_KEY');
 }
 
 /**
- * Format alerts as context for the AI
+ * Format alerts as context for PAI
  */
 function formatAlertContext(alerts: WazuhAlert[]): string {
   if (!alerts || alerts.length === 0) {
@@ -131,10 +146,6 @@ export async function searchWazuhAlerts(params: {
   time_range?: string;
   limit?: number;
 }): Promise<{ results: any[]; total: number; error?: string }> {
-  if (!WAZUH_DASHBOARD_URL || !WAZUH_DASHBOARD_PASSWORD) {
-    return { results: [], total: 0, error: 'Wazuh connection not configured' };
-  }
-
   try {
     const limit = Math.min(params.limit || 20, 100);
 
@@ -214,7 +225,7 @@ export async function searchWazuhAlerts(params: {
       },
     };
 
-    // Use Dashboard API proxy
+    // Use Dashboard API proxy (same pattern as alert-ingest.ts)
     const searchPath = encodeURIComponent('wazuh-alerts-*/_search');
     const response = await fetch(
       `${WAZUH_DASHBOARD_URL}/api/console/proxy?path=${searchPath}&method=POST`,
@@ -298,45 +309,147 @@ function formatSearchResults(searchResult: { results: any[]; total: number; erro
 }
 
 /**
- * Send a chat message to Claude with optional alert context
- * Supports tool use loop for Wazuh Indexer search
+ * Send a chat message via Ollama's OpenAI-compatible API
  */
-export async function sendChatMessage(
+async function sendOllamaMessage(
   userMessage: string,
   chatHistory: PAIChatMessage[],
-  alertContext?: WazuhAlert[],
-  _sessionId: string = 'specter-dashboard'
+  alertContext: WazuhAlert[] | undefined,
+  ollamaUrl: string,
+  ollamaModel: string,
 ): Promise<PAIChatResponse> {
   try {
-    const apiKey = getApiKey();
+    const systemPrompt = buildSystemPrompt(alertContext);
 
-    // Build system prompt with security context
-    const systemPrompt = `You are a security analyst assistant helping analyze Wazuh SIEM alerts.
-You have expertise in:
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...chatHistory.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: userMessage },
+    ];
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min timeout
+
+    const response = await fetch(`${ollamaUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ollamaModel,
+        messages,
+        max_tokens: 2048,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Ollama API error:', response.status, errorText);
+      return { success: false, error: `Ollama error: ${response.status} - is Ollama running at ${ollamaUrl}?` };
+    }
+
+    const data = await response.json() as any;
+    const content = data.choices?.[0]?.message?.content || '';
+
+    return { success: true, content };
+  } catch (error: any) {
+    console.error('Ollama error:', error);
+    if (error?.name === 'AbortError') {
+      return { success: false, error: 'Ollama request timed out (2 min). Try a smaller model for faster responses.' };
+    }
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Ollama connection failed: ${msg}. Is Ollama running?` };
+  }
+}
+
+/**
+ * Fetch available models from Ollama
+ */
+export async function getOllamaModels(ollamaUrl: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${ollamaUrl}/api/tags`);
+    if (!response.ok) return [];
+    const data = await response.json() as any;
+    return (data.models || []).map((m: any) => m.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the system prompt (shared between providers)
+ */
+function buildSystemPrompt(alertContext?: WazuhAlert[]): string {
+  return `You are a senior security analyst mentoring a junior SOC analyst through Wazuh SIEM alert triage.
+Your expertise spans:
 - Threat detection and incident response
 - MITRE ATT&CK framework
 - Network security and log analysis
 - Compliance frameworks (PCI DSS, HIPAA, GDPR, NIST)
 - Remediation recommendations
 
-When analyzing alerts:
-1. Explain what the alert means in plain language
-2. Assess the potential impact and risk
-3. Provide actionable remediation steps
-4. Identify related indicators of compromise (IOCs)
-5. Suggest relevant MITRE ATT&CK techniques
+## How to Respond
 
-You have a search tool to query the Wazuh Indexer for historical alerts. Use it when you need to:
-- Find related alerts from the same IP address
-- Look up alert frequency or patterns over time
-- Correlate events across different time periods
-- Investigate whether an IP or rule has been seen before
+**Always structure your analysis to guide the analyst's thinking, not just give answers:**
 
-Be concise but thorough. If multiple alerts are provided, look for patterns or correlations.
+1. **What is this?** — Explain the alert in plain language. What triggered it, and what does it mean?
+2. **Why does it matter?** — Assess severity and potential impact. Is this urgent or noise?
+3. **How do I know?** — Show your reasoning. What fields in the alert led to your conclusion? Teach the analyst what to look at.
+4. **What do I do next?** — Give specific, actionable next steps in priority order. Include exact commands, queries, or procedures when applicable.
+5. **What should I watch for?** — Related IOCs, follow-up alerts, or escalation triggers that indicate the situation is worsening.
+
+**Tone:** Direct and practical. Explain *why* behind each recommendation so the analyst builds intuition over time. Use markdown formatting — headers, bold, bullet lists, and code blocks — for readability.
+
+If multiple alerts are provided, look for patterns or correlations.
 
 ${alertContext ? formatAlertContext(alertContext) : ''}`;
+}
 
-    // Build messages array
+/**
+ * Send a chat message to PAI with optional alert context
+ * Supports tool use loop for Wazuh Indexer search (Anthropic only)
+ */
+export async function sendChatMessage(
+  userMessage: string,
+  chatHistory: PAIChatMessage[],
+  alertContext?: WazuhAlert[],
+  sessionId: string = 'wazuh-dashboard',
+  provider: AIProvider = 'anthropic',
+  ollamaUrl?: string,
+  ollamaModel?: string,
+): Promise<PAIChatResponse> {
+  // Route to Ollama if selected
+  if (provider === 'ollama') {
+    if (!ollamaModel) {
+      return { success: false, error: 'No Ollama model selected. Open settings to choose a model.' };
+    }
+    return sendOllamaMessage(
+      userMessage,
+      chatHistory,
+      alertContext,
+      ollamaUrl || 'http://localhost:11434',
+      ollamaModel,
+    );
+  }
+  try {
+    const apiKey = await getApiKey();
+
+    // Build system prompt with security context + Anthropic-specific tool instructions
+    const systemPrompt = buildSystemPrompt(alertContext) + `
+
+## Tools Available
+
+You have a search tool to query the Wazuh Indexer for historical alerts. Use it proactively to:
+- Find related alerts from the same source IP
+- Check alert frequency and patterns over time
+- Correlate events across different time periods
+- Determine if an IP or rule has been seen before
+
+When you search, briefly explain *why* you're searching so the analyst learns when to correlate.`;
+
+    // Build messages array - must handle tool_use history correctly
     const messages: any[] = [
       ...chatHistory.map(m => ({
         role: m.role,
@@ -367,7 +480,7 @@ ${alertContext ? formatAlertContext(alertContext) : ''}`;
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('Anthropic API error:', response.status, error);
+        console.error('PAI API error:', response.status, error);
         return {
           success: false,
           error: `API error: ${response.status}`,
@@ -386,7 +499,7 @@ ${alertContext ? formatAlertContext(alertContext) : ''}`;
 
         for (const toolUse of toolUseBlocks) {
           if (toolUse.name === 'search_wazuh_alerts') {
-            console.log(`[Chat] Tool call #${toolCallCount}: search_wazuh_alerts`, toolUse.input);
+            console.log(`[PAI Chat] Tool call #${toolCallCount}: search_wazuh_alerts`, toolUse.input);
             const searchResult = await searchWazuhAlerts(toolUse.input);
             const resultText = formatSearchResults(searchResult);
 
@@ -422,7 +535,7 @@ ${alertContext ? formatAlertContext(alertContext) : ''}`;
       content: 'I performed multiple searches but reached the analysis limit. Please refine your question for more targeted results.',
     };
   } catch (error) {
-    console.error('Error calling Anthropic API:', error);
+    console.error('Error calling PAI:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
