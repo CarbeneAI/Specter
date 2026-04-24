@@ -222,6 +222,16 @@ const handleDismiss = (alert: WazuhAlert) => {
 
 // Handle alert suppression
 const handleSuppress = async (ruleId: string, reason: string, description: string, suricataSid?: string) => {
+  const label = suricataSid ? `Suricata SID ${suricataSid}` : `Rule ${ruleId}`;
+
+  // Optimistically hide alerts immediately — don't wait for the SSH round-trip
+  if (suricataSid) {
+    suppressedSuricataIds.value = new Set([...suppressedSuricataIds.value, suricataSid]);
+  } else {
+    suppressedWazuhIds.value = new Set([...suppressedWazuhIds.value, ruleId]);
+  }
+  toast.success(`${label} suppressed — applying on server...`);
+
   try {
     const response = await fetch(`${API_URL}/alerts/suppress`, {
       method: 'POST',
@@ -231,19 +241,30 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
 
     const data = await response.json();
 
-    if (data.success) {
-      const label = suricataSid ? `Suricata SID ${suricataSid}` : `Rule ${ruleId}`;
-      toast.success(`${label} suppressed successfully`);
-      // Immediately hide suppressed alerts from feed
+    if (!data.success) {
+      // Roll back optimistic update
       if (suricataSid) {
-        suppressedSuricataIds.value = new Set([...suppressedSuricataIds.value, suricataSid]);
+        const rolled = new Set(suppressedSuricataIds.value);
+        rolled.delete(suricataSid);
+        suppressedSuricataIds.value = rolled;
       } else {
-        suppressedWazuhIds.value = new Set([...suppressedWazuhIds.value, ruleId]);
+        const rolled = new Set(suppressedWazuhIds.value);
+        rolled.delete(ruleId);
+        suppressedWazuhIds.value = rolled;
       }
-    } else {
       toast.error(data.error || 'Failed to suppress rule');
     }
   } catch (err) {
+    // Roll back optimistic update on network failure
+    if (suricataSid) {
+      const rolled = new Set(suppressedSuricataIds.value);
+      rolled.delete(suricataSid);
+      suppressedSuricataIds.value = rolled;
+    } else {
+      const rolled = new Set(suppressedWazuhIds.value);
+      rolled.delete(ruleId);
+      suppressedWazuhIds.value = rolled;
+    }
     toast.error('Failed to connect to server');
   }
 };
