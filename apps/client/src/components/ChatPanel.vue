@@ -287,7 +287,111 @@ const quickActions = [
         </div>
       </template>
 
-      <!-- Empty state -->
+      <!-- Alert detail card (shown when alert selected but no messages yet) -->
+      <div v-else-if="selectedAlerts.length > 0" class="px-2 py-4 space-y-3">
+        <div
+          v-for="alert in selectedAlerts"
+          :key="alert.id"
+          class="bg-bg-secondary rounded-lg border border-border-primary p-4 space-y-3"
+        >
+          <!-- Severity + Rule ID -->
+          <div class="flex items-center gap-2">
+            <span
+              class="w-2.5 h-2.5 rounded-full shrink-0"
+              :class="{
+                'bg-severity-critical': alert.rule.level >= 12,
+                'bg-severity-high': alert.rule.level >= 7 && alert.rule.level < 12,
+                'bg-severity-medium': alert.rule.level >= 3 && alert.rule.level < 7,
+                'bg-severity-low': alert.rule.level < 3,
+              }"
+            />
+            <span class="text-xs font-medium text-text-primary">
+              Level {{ alert.rule.level }}
+              <span v-if="alert.rule.level >= 12" class="text-severity-critical"> — Critical</span>
+              <span v-else-if="alert.rule.level >= 7" class="text-severity-high"> — High</span>
+              <span v-else-if="alert.rule.level >= 3" class="text-severity-medium"> — Medium</span>
+              <span v-else class="text-severity-low"> — Low</span>
+            </span>
+            <span class="px-1.5 py-0.5 rounded text-xs font-mono bg-bg-tertiary text-text-tertiary">{{ alert.rule.id }}</span>
+            <span v-if="alert.data?.alert?.signature_id" class="px-1.5 py-0.5 rounded text-xs font-mono bg-severity-medium-bg text-severity-medium">SID {{ alert.data.alert.signature_id }}</span>
+          </div>
+
+          <!-- Description -->
+          <p class="text-sm text-accent-blue font-medium">{{ alert.rule.description }}</p>
+
+          <!-- Key fields -->
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            <div v-if="alert.agent?.name">
+              <span class="text-text-tertiary">Agent: </span>
+              <span class="text-text-secondary">{{ alert.agent.name }}</span>
+              <span v-if="alert.agent.ip" class="text-text-tertiary"> ({{ alert.agent.ip }})</span>
+            </div>
+            <div v-if="alert.timestamp">
+              <span class="text-text-tertiary">Time: </span>
+              <span class="text-text-secondary">{{ new Date(alert.timestamp).toLocaleString() }}</span>
+            </div>
+            <div v-if="alert.srcip">
+              <span class="text-text-tertiary">Source IP: </span>
+              <span class="text-text-secondary font-mono">{{ alert.srcip }}</span>
+            </div>
+            <div v-if="alert.dstip">
+              <span class="text-text-tertiary">Dest IP: </span>
+              <span class="text-text-secondary font-mono">{{ alert.dstip }}</span>
+            </div>
+            <div v-if="alert.srcuser">
+              <span class="text-text-tertiary">Source User: </span>
+              <span class="text-text-secondary">{{ alert.srcuser }}</span>
+            </div>
+            <div v-if="alert.dstport">
+              <span class="text-text-tertiary">Dest Port: </span>
+              <span class="text-text-secondary font-mono">{{ alert.dstport }}</span>
+            </div>
+            <div v-if="alert.location">
+              <span class="text-text-tertiary">Location: </span>
+              <span class="text-text-secondary">{{ alert.location }}</span>
+            </div>
+            <div v-if="alert.protocol">
+              <span class="text-text-tertiary">Protocol: </span>
+              <span class="text-text-secondary">{{ alert.protocol }}</span>
+            </div>
+          </div>
+
+          <!-- MITRE ATT&CK -->
+          <div v-if="alert.rule.mitre?.id?.length" class="flex flex-wrap gap-1">
+            <span class="text-xs text-text-tertiary mr-1">MITRE:</span>
+            <span
+              v-for="mid in alert.rule.mitre.id"
+              :key="mid"
+              class="px-1.5 py-0.5 bg-accent-purple/10 border border-accent-purple/20 rounded text-xs text-accent-purple font-mono"
+            >{{ mid }}</span>
+          </div>
+
+          <!-- Compliance tags -->
+          <div v-if="alert.rule.pci_dss?.length || alert.rule.hipaa?.length || alert.rule.gdpr?.length" class="flex flex-wrap gap-1">
+            <span v-for="tag in (alert.rule.pci_dss || [])" :key="'pci-'+tag" class="px-1.5 py-0.5 bg-bg-tertiary rounded text-xs text-text-tertiary">PCI {{ tag }}</span>
+            <span v-for="tag in (alert.rule.hipaa || [])" :key="'hipaa-'+tag" class="px-1.5 py-0.5 bg-bg-tertiary rounded text-xs text-text-tertiary">HIPAA {{ tag }}</span>
+            <span v-for="tag in (alert.rule.gdpr || [])" :key="'gdpr-'+tag" class="px-1.5 py-0.5 bg-bg-tertiary rounded text-xs text-text-tertiary">GDPR {{ tag }}</span>
+          </div>
+
+          <!-- Rule groups -->
+          <div v-if="alert.rule.groups?.length" class="flex flex-wrap gap-1">
+            <span
+              v-for="group in alert.rule.groups"
+              :key="group"
+              class="px-1.5 py-0.5 bg-bg-tertiary rounded text-xs text-text-tertiary"
+            >{{ group }}</span>
+          </div>
+
+          <!-- Full log (truncated) -->
+          <div v-if="alert.full_log" class="mt-1">
+            <p class="text-xs text-text-tertiary mb-1">Log:</p>
+            <pre class="text-xs text-text-secondary bg-bg-primary rounded p-2 overflow-x-auto max-h-24 overflow-y-auto font-mono leading-relaxed">{{ alert.full_log }}</pre>
+          </div>
+        </div>
+        <p class="text-xs text-text-tertiary text-center">Use the quick actions above or ask a question to analyze this alert.</p>
+      </div>
+
+      <!-- Empty state (no alert selected, no messages) -->
       <div v-else class="h-full flex flex-col items-center justify-center text-text-tertiary">
         <Bot class="w-12 h-12 mb-3 opacity-50" />
         <p class="text-sm text-center">Select an alert and ask about it,<br>or use the quick actions above.</p>
