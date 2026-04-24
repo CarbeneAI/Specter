@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AlertStats from './components/AlertStats.vue';
 import AlertFeed from './components/AlertFeed.vue';
 import ChatPanel from './components/ChatPanel.vue';
@@ -52,7 +52,17 @@ async function fetchSuppressedRules() {
   }
 }
 
-onMounted(fetchSuppressedRules);
+// Refresh suppressed rules every 15 seconds so server-side suppressions appear without reload
+let suppressionPollTimer: ReturnType<typeof setInterval> | undefined;
+
+onMounted(() => {
+  fetchSuppressedRules();
+  suppressionPollTimer = setInterval(fetchSuppressedRules, 15000);
+});
+
+onUnmounted(() => {
+  if (suppressionPollTimer) clearInterval(suppressionPollTimer);
+});
 
 // Dismissed individual alert IDs (client-side only, resets on refresh)
 const dismissedAlertIds = ref<Set<number>>(new Set());

@@ -30,7 +30,7 @@ let onAlertsReceived: ((alerts: WazuhAlert[]) => void) | null = null;
 const WAZUH_DASHBOARD_URL = process.env.WAZUH_DASHBOARD_URL;
 const WAZUH_DASHBOARD_USER = process.env.WAZUH_DASHBOARD_USER || 'admin';
 const WAZUH_DASHBOARD_PASSWORD = process.env.WAZUH_DASHBOARD_PASSWORD;
-const POLL_INTERVAL_MS = parseInt(process.env.WAZUH_POLL_INTERVAL || '30000'); // 30 seconds
+const POLL_INTERVAL_MS = parseInt(process.env.WAZUH_POLL_INTERVAL || '15000'); // 15 seconds
 
 if (!WAZUH_DASHBOARD_URL) {
   console.error('ERROR: WAZUH_DASHBOARD_URL environment variable is required');
