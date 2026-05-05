@@ -199,6 +199,23 @@ Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` env vars with SSH key auth con
 
 See [docs/deployment.md](docs/deployment.md) for systemd service setup.
 
+## Companion Tools
+
+- **[OhMyPCAP](https://github.com/dougburks/ohmypcap)** — Standalone PCAP analyzer by Doug Burks (Security Onion). Pairs naturally with Specter: when an alert needs packet-level investigation, drop the PCAP into OhMyPCAP for Suricata alerts, flow/DNS/HTTP/TLS metadata, ASCII transcripts, hexdumps, and stream carving. Self-host with the [docker-compose manifest in homelab-deploy/ohmypcap/](https://github.com/CarbeneAI/PAI/tree/main/homelab-deploy/ohmypcap), or try the public demo at [securityonion.net/pcap](https://securityonion.net/pcap).
+
+### PCAP Download from Suricata Alerts
+
+Hover any Suricata alert row → click the **download (FileDown) icon** in the action gutter. A panel pops up with a copy-paste shell command that:
+
+1. SSHes to the Suricata host
+2. Locates the rotating PCAP file matching the alert's timestamp
+3. Carves only the alert's flow (BPF: `host SRC and host DST`)
+4. Streams the resulting `.pcap` straight to `~/Downloads/alert-<flow_id>.pcap` on your laptop
+
+Drop that file into [OhMyPCAP](https://pcap.home.carbeneai.com) for full analysis.
+
+**Requires:** Suricata's `pcap-log` output enabled with `conditional: alerts` and `mode: normal` (uncompressed). The button only appears for Suricata alerts where `srcip` and `dstip` are populated. Override the SSH target with `VITE_PCAP_SSH=user@host` at build time.
+
 ## Roadmap
 
 Specter currently analyzes and explains alerts. The next phase is autonomous response.
