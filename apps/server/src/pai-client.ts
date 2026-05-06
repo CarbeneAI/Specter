@@ -10,12 +10,15 @@ import type { WazuhAlert, PAIChatMessage, PAIChatResponse } from './types';
 type AIProvider = 'anthropic' | 'ollama';
 
 // PAI API configuration
-const PAI_API_URL = process.env.PAI_API_URL || 'http://192.168.2.81:3001/v1/messages';
+const PAI_API_URL = process.env.PAI_API_URL || 'http://localhost:3001/v1/messages';
 
 // Wazuh Dashboard API configuration (same as alert-ingest.ts)
-const WAZUH_DASHBOARD_URL = process.env.WAZUH_DASHBOARD_URL || 'https://192.168.2.76';
+const WAZUH_DASHBOARD_URL = process.env.WAZUH_DASHBOARD_URL || 'https://wazuh.example.local';
 const WAZUH_DASHBOARD_USER = process.env.WAZUH_DASHBOARD_USER || 'admin';
-const WAZUH_DASHBOARD_PASSWORD = process.env.WAZUH_DASHBOARD_PASSWORD || 'rf0mmVkJkOfLJgT201YrCk*+fKN40U+e';
+const WAZUH_DASHBOARD_PASSWORD = process.env.WAZUH_DASHBOARD_PASSWORD;
+if (!WAZUH_DASHBOARD_PASSWORD) {
+  throw new Error('WAZUH_DASHBOARD_PASSWORD env var is required. Refusing to use a hardcoded fallback.');
+}
 
 // Tool definition for Anthropic API
 const SEARCH_TOOL = {
