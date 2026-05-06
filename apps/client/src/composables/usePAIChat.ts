@@ -32,7 +32,9 @@ export function usePAIChat() {
   const loadOllamaModels = async () => {
     try {
       const ollamaUrl = providerConfig.value.ollamaUrl;
-      const response = await fetch(`${API_URL}/settings/ollama-models?ollamaUrl=${encodeURIComponent(ollamaUrl)}`);
+      const response = await fetch(`${API_URL}/settings/ollama-models?ollamaUrl=${encodeURIComponent(ollamaUrl)}`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         providerConfig.value.availableModels = data.models || [];
@@ -69,7 +71,9 @@ export function usePAIChat() {
   // Load quick prompts
   const loadPrompts = async () => {
     try {
-      const response = await fetch(`${API_URL}/chat/prompts`);
+      const response = await fetch(`${API_URL}/chat/prompts`, {
+        credentials: 'include',
+      });
       if (response.ok) {
         quickPrompts.value = await response.json();
       }
@@ -99,6 +103,7 @@ export function usePAIChat() {
     try {
       const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },

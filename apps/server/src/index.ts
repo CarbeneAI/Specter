@@ -18,6 +18,10 @@ import { suppressSuricataRule, getSuppressedSIDs } from './suricata-suppression'
 // Store WebSocket clients
 const wsClients = new Set<any>();
 
+// Allowed origin for CORS — must match the Vite client's production domain.
+// Using a specific origin (not '*') is required when credentials:include is set.
+const ALLOWED_ORIGIN = 'https://wazuh-dashboard.home.carbeneai.com';
+
 // Start alert ingestion with WebSocket broadcast callback
 startAlertIngestion((alerts) => {
   // Broadcast each alert to connected WebSocket clients
@@ -51,16 +55,26 @@ const server = Bun.serve({
   async fetch(req: Request) {
     const url = new URL(req.url);
 
-    // CORS headers
-    const headers = {
-      'Access-Control-Allow-Origin': '*',
+    // Log authenticated user from Authentik forward-auth headers (injected by Traefik).
+    // Traefik strips any forged X-Authentik-* headers before this point.
+    const akUser = req.headers.get('X-Authentik-Email') || req.headers.get('X-Authentik-Username') || '<unauthenticated>';
+    console.log(`[req] ${req.method} ${url.pathname} user=${akUser}`);
+
+    // CORS: specific origin required when credentials:include is used on the client.
+    // Vary: Origin tells CDN/proxy caches that responses differ by origin.
+    const origin = req.headers.get('Origin');
+    const corsOrigin = origin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : '';
+    const headers: Record<string, string> = {
+      'Access-Control-Allow-Origin': corsOrigin || ALLOWED_ORIGIN,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Credentials': 'true',
+      'Vary': 'Origin',
     };
 
     // Preflight
     if (req.method === 'OPTIONS') {
-      return new Response(null, { headers });
+      return new Response(null, { status: 204, headers });
     }
 
     // Health check

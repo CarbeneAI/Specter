@@ -32,7 +32,9 @@ const suppressedSuricataIds = ref<Set<string>>(new Set());
 // Fetch suppressed rules from server
 async function fetchSuppressedRules() {
   try {
-    const response = await fetch(`${API_URL}/alerts/suppressed`);
+    const response = await fetch(`${API_URL}/alerts/suppressed`, {
+      credentials: 'include',
+    });
     const data = await response.json();
     if (data.sids) {
       const wazuh = new Set<string>();
@@ -235,6 +237,7 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
   try {
     const response = await fetch(`${API_URL}/alerts/suppress`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ruleId, reason, description, suricataSid }),
     });
