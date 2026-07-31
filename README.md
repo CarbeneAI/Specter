@@ -14,11 +14,11 @@ Specter is a real-time security dashboard that connects to your Wazuh SIEM and S
 
 ## About CarbeneAI
 
-Specter is one of four open-source AI security proofs of concept published by CarbeneAI, alongside [Harbinger](https://github.com/CarbeneAI/Harbinger) (AI threat intel), [Talon](https://github.com/CarbeneAI/Talon) (AI-assisted offensive workflows), and [Forge](https://github.com/CarbeneAI/Forge) (AI operations platform). They are not the product. They exist so prospects can see CarbeneAI's founder, Clint P. Garrison, understands the end-to-end strategy of AI in security operations.
+Specter is one of four open-source security tools published by CarbeneAI, alongside [Harbinger](https://github.com/CarbeneAI/Harbinger) (AI threat intel), [Talon](https://github.com/CarbeneAI/Talon) (AI-assisted offensive workflows), and [Forge](https://github.com/CarbeneAI/Forge) (AI operations platform).
 
-CarbeneAI is a Fractional CTO + CISO + AI Strategy advisory practice for CEOs and Boards in risk-driven environments. Clint owns the strategy and risk seat at the client table; CarbeneAI's team and partner network deliver execution.
+CarbeneAI builds open-source tooling for security operations and teaches practitioners to build their own. These repos are the working reference.
 
-Use this repo. Fork it. Improve it. For CarbeneAI advisory engagement: [carbene.ai](https://carbene.ai)
+Use this repo. Fork it. Improve it. More at [carbene.ai](https://carbene.ai)
 
 ## Features
 
@@ -244,7 +244,11 @@ Execute AI-recommended fixes directly from the dashboard with user approval. SSH
 
 For trusted alert patterns with known-safe remediations, let the AI act without waiting for approval — then notify you after. A SOC analyst that never sleeps and never gets alert fatigue.
 
-> **This isn't hypothetical.** The autonomous response workflow has already been tested manually — Suricata detected 1,500+ SSH brute force attempts against a production server, and Claude Code responded by hardening SSH configuration, verifying fail2ban was active, adding firewall rules, and whitelisting trusted IPs. The entire incident was handled in a single AI conversation. Specter's roadmap is about packaging that capability into the dashboard.
+> **This isn't hypothetical.** The autonomous response workflow has already been tested manually. Suricata detected 1,500+ SSH brute force attempts against a production server, and Claude Code responded by hardening SSH configuration, verifying fail2ban was active, adding firewall rules, and whitelisting trusted IPs. The entire incident was handled in a single AI conversation. Specter's roadmap is about packaging that capability into the dashboard.
+
+### Why the decision belongs on the endpoint
+
+The architectural case for moving detection and response onto the agent, including the parts that break when you do and the parts that are not solved, is published in full at [endpoint-mesh](https://github.com/CarbeneAI/endpoint-mesh). No patents, no restrictions. Any open-source security project is free to implement it.
 
 ## Contributing
 
