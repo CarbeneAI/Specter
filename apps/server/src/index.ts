@@ -1,9 +1,9 @@
 /**
- * Wazuh Security Dashboard Server
+ * Specter - Security Dashboard Server
  * HTTP API + WebSocket server for real-time alert streaming
  */
 
-import type { WazuhAlert } from './types';
+import type { WazuhAlert, PAIChatMessage } from './types';
 import {
   startAlertIngestion,
   getRecentAlerts,
@@ -11,16 +11,31 @@ import {
   getFilterOptions,
   filterAlerts,
   addAlerts,
+  getScoredAlerts,
 } from './alert-ingest';
+import type { ScoreBand } from './scorer';
 import { sendChatMessage, searchWazuhAlerts, getOllamaModels, QUICK_PROMPTS } from './pai-client';
+import type { AIProvider } from './pai-client';
 import { suppressSuricataRule, getSuppressedSIDs } from './suricata-suppression';
+import { listInvestigations, getInvestigation } from './ledger';
+
+// GET /ledger/:id -- :id must be a well-formed UUID. Validated by regex BEFORE
+// getInvestigation() is ever called, so a malformed id short-circuits to 404
+// without touching SQLite (defense in depth, mirrors the guard already inside
+// ledger.ts's getInvestigation()). Deliberately does NOT match /ledger/:id/share
+// or /ledger/share/:token -- share-token routes are out of scope for this build.
+const investigationMatch = (pathname: string) =>
+  pathname.match(/^\/ledger\/([0-9a-f-]{36})$/i);
+
+const PORT = parseInt(process.env.PORT || '4001');
 
 // Store WebSocket clients
 const wsClients = new Set<any>();
 
-// Allowed origin for CORS — must match the Vite client's production domain.
-// Using a specific origin (not '*') is required when credentials:include is set.
-const ALLOWED_ORIGIN = 'https://wazuh-dashboard.home.carbeneai.com';
+// Allowed origin for CORS. Set CORS_ALLOWED_ORIGIN to the URL the dashboard is
+// served from. A specific origin (not '*') is required because the client sends
+// credentials:include. Defaults to the Vite dev server for a fresh clone.
+const ALLOWED_ORIGIN = process.env.CORS_ALLOWED_ORIGIN || 'http://localhost:5173';
 
 // Start alert ingestion with WebSocket broadcast callback
 startAlertIngestion((alerts) => {
@@ -48,9 +63,21 @@ startAlertIngestion((alerts) => {
   });
 });
 
+// Shape of the POST /chat request body -- narrow on purpose, mirrors the
+// fields sendChatMessage() actually consumes.
+interface ChatRequestBody {
+  message?: string;
+  history?: PAIChatMessage[];
+  alertContext?: WazuhAlert[];
+  sessionId?: string;
+  provider?: AIProvider;
+  ollamaUrl?: string;
+  ollamaModel?: string;
+}
+
 // Create Bun server with HTTP and WebSocket support
 const server = Bun.serve({
-  port: 4001,
+  port: PORT,
 
   async fetch(req: Request) {
     const url = new URL(req.url);
@@ -122,6 +149,16 @@ const server = Bun.serve({
       });
     }
 
+    // GET /alerts/scored - Get scored alerts, optionally filtered by band
+    if (url.pathname === '/alerts/scored' && req.method === 'GET') {
+      const limit = parseInt(url.searchParams.get('limit') || '100');
+      const band = url.searchParams.get('band') as ScoreBand | null;
+      const alerts = getScoredAlerts(limit, band || undefined);
+      return new Response(JSON.stringify(alerts), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
     // POST /alerts/ingest - Receive alerts from n8n webhook
     if (url.pathname === '/alerts/ingest' && req.method === 'POST') {
       try {
@@ -137,7 +174,7 @@ const server = Bun.serve({
           );
         }
 
-        const storedAlerts = addAlerts(alertsToAdd);
+        const storedAlerts = await addAlerts(alertsToAdd);
         console.log(`Ingested ${storedAlerts.length} alert(s) via HTTP`);
 
         return new Response(
@@ -153,10 +190,10 @@ const server = Bun.serve({
       }
     }
 
-    // POST /chat - Send message to PAI
+    // POST /chat - Send message to AI analyst
     if (url.pathname === '/chat' && req.method === 'POST') {
       try {
-        const body = await req.json();
+        const body = await req.json() as ChatRequestBody;
         const { message, history = [], alertContext, sessionId, provider, ollamaUrl, ollamaModel } = body;
 
         if (!message) {
@@ -182,6 +219,35 @@ const server = Bun.serve({
     // GET /chat/prompts - Get quick prompt templates
     if (url.pathname === '/chat/prompts' && req.method === 'GET') {
       return new Response(JSON.stringify(QUICK_PROMPTS), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /ledger - List recent investigations (read-only, no mutation surface)
+    if (url.pathname === '/ledger' && req.method === 'GET') {
+      const rawLimit = parseInt(url.searchParams.get('limit') || '50');
+      const limit = Math.min(Math.max(1, Number.isNaN(rawLimit) ? 50 : rawLimit), 200);
+      const investigations = listInvestigations(limit);
+      return new Response(JSON.stringify({ investigations }), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /ledger/:id - Replay a single investigation (permalink; UUID only)
+    // SCOPE NOTE: share-token routes (/ledger/:id/share, /ledger/share/:token)
+    // are out of scope for this build -- do not add them here.
+    if (url.pathname.startsWith('/ledger/') && req.method === 'GET') {
+      const idMatch = investigationMatch(url.pathname);
+      // Malformed/non-UUID-shaped id (e.g. /ledger/not-a-uuid), or any deeper
+      // path like /ledger/:id/share: 404, never a 500 and never a SQL lookup.
+      const investigation = idMatch ? getInvestigation(idMatch[1]) : null;
+      if (!investigation) {
+        return new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ investigation }), {
         headers: { ...headers, 'Content-Type': 'application/json' },
       });
     }
@@ -265,7 +331,7 @@ const server = Bun.serve({
     }
 
     // Default response
-    return new Response('Wazuh Security Dashboard Server', {
+    return new Response('Specter Security Dashboard Server', {
       headers: { ...headers, 'Content-Type': 'text/plain' },
     });
   },
@@ -304,13 +370,15 @@ const server = Bun.serve({
       wsClients.delete(ws);
     },
 
-    error(ws, error) {
+    // @ts-ignore - Bun's websocket handler supports an 'error' callback at
+    // runtime; the installed bun-types WebSocketHandler<T> doesn't declare it.
+    error(ws: any, error: unknown) {
       console.error('WebSocket error:', error);
       wsClients.delete(ws);
     },
   },
 });
 
-console.log(`Wazuh Dashboard Server running on http://localhost:${server.port}`);
+console.log(`Specter Dashboard Server running on http://localhost:${server.port}`);
 console.log(`WebSocket endpoint: ws://localhost:${server.port}/stream`);
 console.log(`Health check: http://localhost:${server.port}/health`);

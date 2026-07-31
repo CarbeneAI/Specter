@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { ChevronRight, Server, Clock, Tag, ExternalLink, BellOff, X, FileDown, Copy, Check } from 'lucide-vue-next';
+import ScorerBadge from './ScorerBadge.vue';
 import type { WazuhAlert } from '../types';
 import { getSeverityLevel, getSeverityLabel } from '../types';
 
 // Suricata host that runs pcap-log with conditional:alerts. Override with VITE_PCAP_SSH if needed.
-const PCAP_SSH_TARGET = (import.meta.env.VITE_PCAP_SSH as string) || 'cgarrison@192.168.2.92';
+const PCAP_SSH_TARGET = (import.meta.env.VITE_PCAP_SSH as string) || 'user@suricata-host';
 const PCAP_LOG_DIR = '~/homelab-deploy/suricata/logs';
 
 const props = defineProps<{
@@ -94,7 +95,7 @@ const handleCancelSuppress = (event: Event) => {
 // Suricata's pcap-log (conditional: alerts) writes per-flow PCAPs to disk.
 // We generate a one-liner that finds the right file, carves the alert's
 // 5-tuple, and streams the resulting .pcap back to the analyst's laptop —
-// ready to drop into OhMyPCAP at https://pcap.home.carbeneai.com
+// ready to drop into OhMyPCAP at https://securityonion.net/pcap
 const showPcapPanel = ref(false);
 const pcapCopied = ref(false);
 
@@ -165,6 +166,8 @@ const handleClosePcap = (event: Event) => {
               Level {{ alert.rule.level }} - {{ severityLabel }}
             </span>
             <span class="text-xs text-text-tertiary font-mono">{{ alert.rule.id }}</span>
+            <!-- Deterministic scorer verdict (additive; renders nothing if the alert has no verdict) -->
+            <ScorerBadge :verdict="alert.verdict" />
             <!-- Suricata SID badge -->
             <span
               v-if="isSuricata"
@@ -254,7 +257,7 @@ const handleClosePcap = (event: Event) => {
     >
       <p class="text-xs text-blue-300 mb-2">
         Run this in your terminal to download the PCAP for this flow, then drop it into
-        <a href="https://pcap.home.carbeneai.com" target="_blank" rel="noopener" class="underline hover:text-blue-200">OhMyPCAP</a>:
+        <a href="https://securityonion.net/pcap" target="_blank" rel="noopener" class="underline hover:text-blue-200">OhMyPCAP</a>:
       </p>
       <div class="flex items-start gap-2">
         <pre class="flex-1 text-xs bg-bg-primary border border-border-primary rounded p-2 text-text-primary font-mono overflow-x-auto whitespace-pre-wrap break-all select-all">{{ pcapCommand }}</pre>

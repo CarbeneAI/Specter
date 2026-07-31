@@ -1,5 +1,5 @@
 /**
- * Wazuh Dashboard Client Types
+ * Specter Dashboard Client Types
  */
 
 export interface WazuhAlert {
@@ -46,6 +46,83 @@ export interface WazuhAlert {
   dstport?: string;
   protocol?: string;
   action?: string;
+  /** Deterministic pre-triage verdict attached by the server's scorer (apps/server/src/scorer.ts). */
+  verdict?: ScoreVerdict;
+}
+
+// ---------------------------------------------------------------------------
+// Scorer types -- hand-mirrored from apps/server/src/scorer.ts (docs/architecture-scorer-ledger.md
+// section 4.1). No shared package between client/server; keep these in sync
+// field-for-field when the server types change.
+// ---------------------------------------------------------------------------
+
+/** Alert bands, ordered most->least severe, plus 'noise' for alert-fatigue suppression candidates. */
+export type ScoreBand = 'critical' | 'high' | 'medium' | 'low' | 'noise';
+
+export interface ScoreVerdict {
+  score: number; // 0-100, clamped
+  band: ScoreBand;
+  reasons: string[]; // human-readable, e.g. "rule level 12 (critical) (+90)"
+  signals: Record<string, number>; // named signal -> point contribution, for transparency/teaching
+  backend: string; // which backend produced this, e.g. 'local-deterministic'
+}
+
+// ---------------------------------------------------------------------------
+// Ledger types -- hand-mirrored from apps/server/src/ledger.ts (docs/architecture-scorer-ledger.md
+// section 4.2).
+// ---------------------------------------------------------------------------
+
+export type StepType = 'llm' | 'tool_call' | 'tool_result';
+
+export interface LlmStepPayload {
+  role: 'assistant';
+  content: unknown; // raw Anthropic content blocks for this turn
+  stopReason: string;
+  usage?: { input_tokens: number; output_tokens: number };
+}
+
+export interface ToolCallStepPayload {
+  toolUseId: string;
+  name: string; // e.g. 'search_wazuh_alerts'
+  input: Record<string, unknown>;
+}
+
+export interface ToolResultStepPayload {
+  toolUseId: string;
+  resultText: string; // the formatted text sent back to Claude as tool_result
+}
+
+export interface InvestigationStep {
+  id: number;
+  investigationId: string;
+  seq: number;
+  type: StepType;
+  payload: LlmStepPayload | ToolCallStepPayload | ToolResultStepPayload;
+  createdAt: string;
+}
+
+/** Row shape for GET /ledger (list) -- cheap, no steps. */
+export interface InvestigationSummary {
+  id: string;
+  createdAt: string;
+  sessionId: string;
+  alertSummary: string | null; // first alert's rule.description, or null
+  verdict: ScoreVerdict | null; // first alert's verdict, or null
+  status: 'running' | 'completed' | 'error';
+  model: string;
+}
+
+/** Full row shape for GET /ledger/:id. */
+export interface InvestigationDetail extends InvestigationSummary {
+  alertContext: WazuhAlert[] | null;
+  verdicts: (ScoreVerdict | null)[] | null; // aligned with alertContext
+  systemPrompt: string;
+  userMessage: string;
+  finalAnalysis: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  durationMs: number | null;
+  steps: InvestigationStep[];
 }
 
 export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low';
@@ -78,6 +155,7 @@ export interface ChatResponse {
   success: boolean;
   content?: string;
   error?: string;
+  investigationId?: string; // lets /chat callers build a permalink into the ledger
 }
 
 export interface QuickPrompts {

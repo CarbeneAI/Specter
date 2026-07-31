@@ -10,10 +10,36 @@ import { readFileSync } from 'fs';
 import { homedir } from 'os';
 import type { WazuhAlert, AlertStats } from './types';
 import { getSeverityLevel } from './types';
+import { scoreAndAttach } from './scorer';
+import type { ScoringContext, ScoreBand } from './scorer';
 
 // In-memory alert store (last N alerts only)
 const MAX_ALERTS = 500;
 const alerts: WazuhAlert[] = [];
+
+// Frequency lookback window for the scorer's frequency-downweight signal (see scorer.ts).
+const FREQUENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Builds a ScoringContext whose lookupFrequency closure counts matching alerts
+ * (key `${srcip}:${rule.id}`) already sitting in the in-memory `alerts` array within the
+ * frequency window -- no network calls, no import of pai-client.ts (see docs/architecture-scorer-ledger.md
+ * section 7 for the import-cycle rationale).
+ */
+function buildScoringContext(): ScoringContext {
+  return {
+    windowMs: FREQUENCY_WINDOW_MS,
+    lookupFrequency: (key: string) => {
+      const [srcip, ruleId] = key.split(':');
+      const cutoff = Date.now() - FREQUENCY_WINDOW_MS;
+      return alerts.filter(a =>
+        a.rule.id === ruleId &&
+        (a.srcip || '') === srcip &&
+        new Date(a.timestamp).getTime() >= cutoff
+      ).length;
+    },
+  };
+}
 
 // Track file position for incremental reading
 const filePositions = new Map<string, number>();
@@ -30,7 +56,7 @@ let onAlertsReceived: ((alerts: WazuhAlert[]) => void) | null = null;
 const WAZUH_DASHBOARD_URL = process.env.WAZUH_DASHBOARD_URL;
 const WAZUH_DASHBOARD_USER = process.env.WAZUH_DASHBOARD_USER || 'admin';
 const WAZUH_DASHBOARD_PASSWORD = process.env.WAZUH_DASHBOARD_PASSWORD;
-const POLL_INTERVAL_MS = parseInt(process.env.WAZUH_POLL_INTERVAL || '15000'); // 15 seconds
+const POLL_INTERVAL_MS = parseInt(process.env.WAZUH_POLL_INTERVAL || '30000'); // 30 seconds
 
 if (!WAZUH_DASHBOARD_URL) {
   console.error('ERROR: WAZUH_DASHBOARD_URL environment variable is required');
@@ -47,6 +73,17 @@ if (!WAZUH_DASHBOARD_PASSWORD) {
 // Track last poll timestamp to only fetch new alerts
 let lastPollTimestamp: string | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Shape of the Wazuh Indexer `_search` response we actually read from.
+ * Narrow on purpose -- we only touch `hits.hits[]._source`, everything inside
+ * `_source` stays loosely typed since it mirrors whatever Wazuh sends.
+ */
+interface WazuhSearchResponse {
+  hits?: {
+    hits?: Array<{ _source: any }>;
+  };
+}
 
 /**
  * Poll Wazuh Indexer for new alerts
@@ -94,7 +131,7 @@ async function pollWazuhIndexer(): Promise<void> {
       return;
     }
 
-    const data = await response.json();
+    const data = await response.json() as WazuhSearchResponse;
     const hits = data.hits?.hits || [];
 
     if (hits.length === 0) return;
@@ -143,7 +180,7 @@ async function pollWazuhIndexer(): Promise<void> {
       id: alerts.length + index + 1,
     }));
 
-    storeAlerts(alertsWithIds);
+    storeAlerts(await scoreAndAttach(alertsWithIds, buildScoringContext()));
   } catch (error) {
     console.error('Wazuh Indexer poll error:', error);
   }
@@ -269,7 +306,7 @@ function watchFile(filePath: string): void {
   const watcher = watch(filePath, (eventType) => {
     if (eventType === 'change') {
       const newAlerts = readNewAlerts(filePath);
-      storeAlerts(newAlerts);
+      scoreAndAttach(newAlerts, buildScoringContext()).then(storeAlerts);
     }
   });
 
@@ -331,9 +368,9 @@ export function getAlertStats(): AlertStats {
 
 /**
  * Add alerts directly (for HTTP ingest endpoint)
- * Returns the stored alerts with IDs assigned
+ * Returns the stored alerts (scored, with IDs assigned)
  */
-export function addAlerts(newAlerts: WazuhAlert[]): WazuhAlert[] {
+export async function addAlerts(newAlerts: WazuhAlert[]): Promise<WazuhAlert[]> {
   if (newAlerts.length === 0) return [];
 
   // Assign IDs to new alerts
@@ -342,10 +379,11 @@ export function addAlerts(newAlerts: WazuhAlert[]): WazuhAlert[] {
     id: alerts.length + index + 1,
   }));
 
-  // Store them
-  storeAlerts(alertsWithIds);
+  // Score, then store them
+  const scored = await scoreAndAttach(alertsWithIds, buildScoringContext());
+  storeAlerts(scored);
 
-  return alertsWithIds;
+  return scored;
 }
 
 /**
@@ -397,6 +435,15 @@ export function filterAlerts(
   }
 
   return filtered.slice(-limit).reverse();
+}
+
+/**
+ * Get scored alerts, optionally filtered by ScoreBand, most-recent-first.
+ * Same shape/behavior as getRecentAlerts(), guaranteed-scored + filterable by band.
+ */
+export function getScoredAlerts(limit = 100, band?: ScoreBand): WazuhAlert[] {
+  let result = alerts.filter(a => !band || a.verdict?.band === band);
+  return result.slice(-limit).reverse();
 }
 
 // For testing - can be run directly

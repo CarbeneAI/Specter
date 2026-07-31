@@ -3,6 +3,8 @@
  * Based on Wazuh alert JSON format
  */
 
+import type { ScoreVerdict } from './scorer';
+
 export interface WazuhAlert {
   id?: number;                    // Auto-incrementing ID for UI
   timestamp: string;              // ISO timestamp
@@ -59,6 +61,7 @@ export interface WazuhAlert {
   dstport?: string;               // Destination port
   protocol?: string;              // Network protocol
   action?: string;                // Action taken
+  verdict?: ScoreVerdict;         // Deterministic scorer verdict, attached during ingestion
 }
 
 export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low';
@@ -98,6 +101,7 @@ export interface PAIChatResponse {
   success: boolean;
   content?: string;
   error?: string;
+  investigationId?: string;   // Ledger permalink id, set when createInvestigation() succeeded
 }
 
 /**

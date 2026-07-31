@@ -22,6 +22,8 @@ Use this repo. Fork it. Improve it. More at [carbene.ai](https://carbene.ai)
 
 ## Features
 
+- **Deterministic Scorer** - Rules-only pre-triage that scores every alert 0-100 and bands it critical/high/medium/low/noise *before* any LLM is called. No API key, no network call, so it keeps working when the AI chat is unconfigured. Every weight lives in one documented constant.
+- **Investigation Ledger** - Every AI investigation persisted as a replayable record: system prompt, each tool call and its result, final analysis, token counts, timing. Addressable by permalink. The receipt that makes autonomous response auditable after the fact.
 - **Live Alert Streaming** - WebSocket-based real-time alert feed from Wazuh Indexer (polls every 30s)
 - **Severity Color Coding** - CarbeneAI dark theme with Critical/High/Medium/Low visual hierarchy
 - **AI Security Analyst** - AI-powered chat that autonomously searches Wazuh for historical context
@@ -143,6 +145,35 @@ See [docs/setup.md](docs/setup.md) for complete setup instructions including:
 - Setting up as a systemd service
 - Production deployment behind a reverse proxy
 
+## Deterministic Scoring
+
+Every alert is scored before the LLM is ever consulted. This is deliberate: LLM calls cost money and latency, and most alerts don't need one. The scorer is pure, has no dependencies, reads no secrets, and makes no network calls.
+
+Signals, all in `SCORER_WEIGHTS` in [apps/server/src/scorer.ts](apps/server/src/scorer.ts):
+
+| Signal | Effect | Reasoning |
+|---|---|---|
+| Wazuh `rule.level` | +10 to +90 | Dominant signal. Rule authors already tuned severity; start there rather than re-deriving it. |
+| MITRE ATT&CK mapping present | +10 | The rule was vetted against real adversary behavior. Absence is never a penalty, only less enrichment. |
+| High frequency, same srcip + rule | -40 | Alert fatigue, not an incident. Flat penalty so one very noisy source can't swing the score further than a merely noisy one. |
+| Rule group in `SUPPRESSED_GROUPS` | -20 | Already-classified routine noise. |
+
+The frequency downweight **only fires on low and medium severity**. A repeating critical or high alert is an active incident, not noise, and frequency alone must never demote it. That gate is the kind of thing that is obvious in hindsight and expensive to learn in production.
+
+Swap in your own model by implementing `ScoringBackend` and calling `registerScoringBackend()` once at startup. No other call site changes.
+
+## Investigation Ledger
+
+Specter's AI chat used to be ephemeral: the reasoning, the evidence, and the tool calls vanished when the tab closed. The ledger persists each investigation to SQLite (`bun:sqlite`, no new dependency) as an ordered sequence of steps, replayable at `/ledger/:id`.
+
+It records the system prompt, every tool call with its arguments and result, the final analysis, model, token usage, and duration. `sk-ant-` patterns are scrubbed before insert as defense in depth. All queries are parameterized; the `:id` route validates UUID shape by regex before SQLite is touched at all.
+
+Ledger writes are fail-open: a SQLite failure logs and is swallowed, never breaking the chat response. Only the Anthropic path is recorded, because the Ollama path has no tool-use loop and therefore no multi-step investigation to reconstruct.
+
+This is the part that matters for autonomous response later. An action a machine took without asking is only defensible if you can reconstruct why it took it.
+
+Full design, schema, and testing strategy: [docs/architecture-scorer-ledger.md](docs/architecture-scorer-ledger.md).
+
 ## How AI Analysis Works
 
 When you click an alert and use the chat panel:
@@ -184,6 +215,9 @@ Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` env vars with SSH key auth con
 | GET | `/alerts/recent?limit=100` | Recent alerts |
 | GET | `/alerts/stats` | Counts by severity |
 | GET | `/alerts/filter?severities=critical,high` | Filtered alerts |
+| GET | `/alerts/scored?band=noise&limit=100` | Scored alerts, optionally filtered by band |
+| GET | `/ledger?limit=50` | List recent investigations |
+| GET | `/ledger/:id` | Replay one investigation (UUID only) |
 | POST | `/alerts/ingest` | Ingest alert(s) via HTTP |
 | POST | `/chat` | AI chat message |
 | GET | `/chat/prompts` | Quick prompt templates |
@@ -220,7 +254,7 @@ Hover any Suricata alert row → click the **download (FileDown) icon** in the a
 3. Carves only the alert's flow (BPF: `host SRC and host DST`)
 4. Streams the resulting `.pcap` straight to `~/Downloads/alert-<flow_id>.pcap` on your laptop
 
-Drop that file into [OhMyPCAP](https://pcap.home.carbeneai.com) for full analysis.
+Drop that file into [OhMyPCAP](https://securityonion.net/pcap) for full analysis.
 
 **Requires:** Suricata's `pcap-log` output enabled with `conditional: alerts` and `mode: normal` (uncompressed). The button only appears for Suricata alerts where `srcip` and `dstip` are populated. Override the SSH target with `VITE_PCAP_SSH=user@host` at build time.
 

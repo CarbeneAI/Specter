@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { LayoutDashboard, History } from 'lucide-vue-next';
 import AlertStats from './components/AlertStats.vue';
 import AlertFeed from './components/AlertFeed.vue';
 import ChatPanel from './components/ChatPanel.vue';
 import ToastContainer from './components/Toast.vue';
+import LedgerView from './components/LedgerView.vue';
 import { useWebSocket } from './composables/useWebSocket';
 import { usePAIChat } from './composables/usePAIChat';
 import { useToast } from './composables/useToast';
 import type { WazuhAlert, AlertStats as AlertStatsType, SeverityLevel, QuickPrompts, AIProvider } from './types';
 
+// View toggle (Live Dashboard <-> Ledger). Purely additive: the WebSocket
+// connection and chat composable below are set up unconditionally regardless
+// of which view is active, and the Live Dashboard markup is hidden with
+// v-show (not v-if) so it never unmounts/reconnects when toggling away and back.
+type DashboardView = 'live' | 'ledger';
+const currentView = ref<DashboardView>('live');
+
 // WebSocket connection for alerts
-const { alerts, stats, isConnected, requestFilter } = useWebSocket();
+const { alerts, isConnected, requestFilter } = useWebSocket();
 
 // Toast notifications
 const toast = useToast();
@@ -21,7 +30,10 @@ function getApiUrl(): string {
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     return 'http://localhost:4001';
   }
-  return 'https://wazuh-dashboard-api.home.carbeneai.com';
+  // Served from a non-localhost origin with no VITE_API_URL set: assume the API
+  // is reachable on the same host, port 4001. Set VITE_API_URL at build time to
+  // point at a different origin (e.g. behind a reverse proxy).
+  return `${window.location.protocol}//${window.location.hostname}:4001`;
 }
 const API_URL = getApiUrl();
 
@@ -275,6 +287,32 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
 
 <template>
   <div class="h-screen flex flex-col bg-bg-primary">
+    <!-- View toggle: Live Dashboard <-> Ledger -->
+    <div class="flex items-center gap-1 px-4 py-1.5 border-b border-border-primary bg-bg-secondary flex-shrink-0">
+      <button
+        class="flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors"
+        :class="currentView === 'live'
+          ? 'bg-accent-blue/20 text-accent-blue'
+          : 'text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary'"
+        @click="currentView = 'live'"
+      >
+        <LayoutDashboard class="w-3.5 h-3.5" />
+        Live Dashboard
+      </button>
+      <button
+        class="flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-colors"
+        :class="currentView === 'ledger'
+          ? 'bg-accent-blue/20 text-accent-blue'
+          : 'text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary'"
+        @click="currentView = 'ledger'"
+      >
+        <History class="w-3.5 h-3.5" />
+        Ledger
+      </button>
+    </div>
+
+    <!-- Live Dashboard view -->
+    <div v-show="currentView === 'live'" class="contents">
     <!-- Top stats bar -->
     <AlertStats
       :stats="visibleStats"
@@ -327,6 +365,10 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
         />
       </div>
     </div>
+    </div>
+
+    <!-- Ledger view (mounted only while active; fetches its own data via useLedger) -->
+    <LedgerView v-if="currentView === 'ledger'" class="flex-1 overflow-hidden" />
 
     <!-- Toast notifications -->
     <ToastContainer />

@@ -7,6 +7,12 @@ dist/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Investigation Ledger database (LEDGER_DB_PATH, default ./data/ledger.sqlite)
+data/
 
 # Logs
 *.log
@@ -36,3 +42,7 @@ apps/server/suricata-disable.conf
 # Internal build artifacts (never publish)
 .devteam/
 *.tsbuildinfo
+
+# Emitted by `vue-tsc -b` alongside the real vite.config.ts
+apps/client/vite.config.js
+apps/client/vite.config.d.ts

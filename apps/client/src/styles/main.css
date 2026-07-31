@@ -76,6 +76,12 @@
     @apply bg-severity-low-bg text-severity-low;
   }
 
+  /* Scorer band below 'low' -- alert-fatigue suppression candidates. Deliberately
+     the most muted badge in the set so noise recedes visually. */
+  .badge-noise {
+    @apply bg-bg-tertiary/40 text-text-tertiary;
+  }
+
   .card {
     @apply bg-bg-secondary border border-border-primary rounded-lg;
     backdrop-filter: blur(10px);

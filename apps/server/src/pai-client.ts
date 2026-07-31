@@ -6,8 +6,18 @@
 
 import { homedir } from 'os';
 import type { WazuhAlert, PAIChatMessage, PAIChatResponse } from './types';
+import {
+  createInvestigation,
+  appendStep,
+  finalizeInvestigation,
+  type StepType,
+  type LlmStepPayload,
+  type ToolCallStepPayload,
+  type ToolResultStepPayload,
+  type FinalizeInvestigationParams,
+} from './ledger';
 
-type AIProvider = 'anthropic' | 'ollama';
+export type AIProvider = 'anthropic' | 'ollama';
 
 // PAI API configuration
 const PAI_API_URL = process.env.PAI_API_URL || 'http://localhost:3001/v1/messages';
@@ -41,16 +51,28 @@ const SEARCH_TOOL = {
 const MAX_TOOL_CALLS = 3;
 
 /**
- * Load API key from environment file
+ * Load the Anthropic API key.
+ *
+ * Resolution order:
+ *  1. `WAZUH_PAI_API_KEY` or `ANTHROPIC_API_KEY` from the environment. Bun auto-loads
+ *     the repo's `.env` into `process.env`, so the Quick Start flow (put
+ *     `ANTHROPIC_API_KEY=sk-ant-...` in `.env`) is satisfied here.
+ *  2. A key file, for setups that keep credentials outside the repo. Path comes from
+ *     `SPECTER_ENV_FILE`, defaulting to `~/.claude/.env`. Set it explicitly to point
+ *     somewhere else, or to a nonexistent path to disable the fallback entirely.
+ *
+ * Throws if no key is found anywhere, which is what makes the no-key degradation path
+ * (deterministic scoring still works, AI chat cleanly reports failure) reachable.
  */
 async function getApiKey(): Promise<string> {
-  // First check environment variable
   if (process.env.WAZUH_PAI_API_KEY) {
     return process.env.WAZUH_PAI_API_KEY;
   }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return process.env.ANTHROPIC_API_KEY;
+  }
 
-  // Fall back to loading from .env file
-  const envPath = `${homedir()}/.claude/.env`;
+  const envPath = process.env.SPECTER_ENV_FILE || `${homedir()}/.claude/.env`;
 
   try {
     const envFile = await Bun.file(envPath).text();
@@ -58,8 +80,8 @@ async function getApiKey(): Promise<string> {
     if (match) {
       return match[1].trim();
     }
-  } catch (err) {
-    console.error('Failed to read API key from .env:', err);
+  } catch {
+    // Absent/unreadable key file is an expected condition, not an error worth logging.
   }
 
   throw new Error('No API key found - set WAZUH_PAI_API_KEY or ANTHROPIC_API_KEY');
@@ -411,8 +433,48 @@ ${alertContext ? formatAlertContext(alertContext) : ''}`;
 }
 
 /**
+ * Guarded ledger.ts wrapper: no-op if investigationId is undefined (i.e.
+ * createInvestigation already failed), and never rethrows -- a bun:sqlite
+ * write failure must never break the chat response (fail-open, per
+ * docs/architecture-scorer-ledger.md section 6 / 1 Goals).
+ */
+function safeAppendStep(
+  investigationId: string | undefined,
+  seq: number,
+  type: StepType,
+  payload: LlmStepPayload | ToolCallStepPayload | ToolResultStepPayload
+): void {
+  if (!investigationId) return;
+  try {
+    appendStep(investigationId, seq, type, payload);
+  } catch (e) {
+    console.error('[Ledger] appendStep failed (continuing without ledger):', e);
+  }
+}
+
+/**
+ * Guarded ledger.ts wrapper: no-op if investigationId is undefined, and
+ * never rethrows -- same fail-open contract as safeAppendStep.
+ */
+function safeFinalize(
+  investigationId: string | undefined,
+  params: FinalizeInvestigationParams
+): void {
+  if (!investigationId) return;
+  try {
+    finalizeInvestigation(investigationId, params);
+  } catch (e) {
+    console.error('[Ledger] finalizeInvestigation failed (continuing without ledger):', e);
+  }
+}
+
+/**
  * Send a chat message to PAI with optional alert context
  * Supports tool use loop for Wazuh Indexer search (Anthropic only)
+ *
+ * LEDGER SCOPE: only the Anthropic path is recorded. The Ollama path returns
+ * before any ledger call, because it has no tool-use loop to replay -- there is
+ * no multi-step investigation to reconstruct. Instrument it here if that changes.
  */
 export async function sendChatMessage(
   userMessage: string,
@@ -436,6 +498,13 @@ export async function sendChatMessage(
       ollamaModel,
     );
   }
+  const startTime = Date.now();
+  let investigationId: string | undefined;
+  let seq = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  const CHAT_MODEL = 'claude-sonnet-4-20250514';
+
   try {
     const apiKey = await getApiKey();
 
@@ -461,6 +530,22 @@ When you search, briefly explain *why* you're searching so the analyst learns wh
       { role: 'user', content: userMessage },
     ];
 
+    // Ledger: open the investigation before the first API call. Verdicts ride
+    // along on alertContext[i].verdict -- already attached by alert-ingest.ts's
+    // scoreAndAttach(). No new scoring call happens here.
+    try {
+      investigationId = createInvestigation({
+        sessionId,
+        alertContext: alertContext ?? null,
+        scorerVerdicts: alertContext?.map(a => a.verdict ?? null) ?? null,
+        model: CHAT_MODEL,
+        systemPrompt,
+        userMessage,
+      });
+    } catch (e) {
+      console.error('[Ledger] createInvestigation failed (continuing without ledger):', e);
+    }
+
     // Tool use loop - max MAX_TOOL_CALLS iterations
     let toolCallCount = 0;
 
@@ -473,7 +558,7 @@ When you search, briefly explain *why* you're searching so the analyst learns wh
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: CHAT_MODEL,
           max_tokens: 2048,
           system: systemPrompt,
           tools: [SEARCH_TOOL],
@@ -484,6 +569,13 @@ When you search, briefly explain *why* you're searching so the analyst learns wh
       if (!response.ok) {
         const error = await response.text();
         console.error('PAI API error:', response.status, error);
+        safeFinalize(investigationId, {
+          status: 'error',
+          finalAnalysis: null,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          durationMs: Date.now() - startTime,
+        });
         return {
           success: false,
           error: `API error: ${response.status}`,
@@ -491,6 +583,16 @@ When you search, briefly explain *why* you're searching so the analyst learns wh
       }
 
       const data = await response.json() as any;
+      totalInputTokens += data.usage?.input_tokens ?? 0;
+      totalOutputTokens += data.usage?.output_tokens ?? 0;
+
+      // Ledger: record this raw LLM turn (assistant content blocks, stop reason, usage).
+      safeAppendStep(investigationId, seq++, 'llm', {
+        role: 'assistant',
+        content: data.content,
+        stopReason: data.stop_reason,
+        usage: data.usage,
+      });
 
       // Check if Claude wants to use a tool
       if (data.stop_reason === 'tool_use') {
@@ -503,8 +605,22 @@ When you search, briefly explain *why* you're searching so the analyst learns wh
         for (const toolUse of toolUseBlocks) {
           if (toolUse.name === 'search_wazuh_alerts') {
             console.log(`[PAI Chat] Tool call #${toolCallCount}: search_wazuh_alerts`, toolUse.input);
+
+            // Ledger: record the call before executing it.
+            safeAppendStep(investigationId, seq++, 'tool_call', {
+              toolUseId: toolUse.id,
+              name: toolUse.name,
+              input: toolUse.input,
+            });
+
             const searchResult = await searchWazuhAlerts(toolUse.input);
             const resultText = formatSearchResults(searchResult);
+
+            // Ledger: record the result actually sent back to Claude.
+            safeAppendStep(investigationId, seq++, 'tool_result', {
+              toolUseId: toolUse.id,
+              resultText,
+            });
 
             toolResults.push({
               type: 'tool_result',
@@ -526,19 +642,44 @@ When you search, briefly explain *why* you're searching so the analyst learns wh
       const textBlocks = (data.content as any[]).filter((block: any) => block.type === 'text');
       const content = textBlocks.map((block: any) => block.text).join('\n');
 
+      safeFinalize(investigationId, {
+        status: 'completed',
+        finalAnalysis: content,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        durationMs: Date.now() - startTime,
+      });
+
       return {
         success: true,
         content,
+        investigationId,
       };
     }
 
     // Hit max tool calls - return what we have
+    const maxCallsContent = 'I performed multiple searches but reached the analysis limit. Please refine your question for more targeted results.';
+    safeFinalize(investigationId, {
+      status: 'completed',
+      finalAnalysis: maxCallsContent,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      durationMs: Date.now() - startTime,
+    });
     return {
       success: true,
-      content: 'I performed multiple searches but reached the analysis limit. Please refine your question for more targeted results.',
+      content: maxCallsContent,
+      investigationId,
     };
   } catch (error) {
     console.error('Error calling PAI:', error);
+    safeFinalize(investigationId, {
+      status: 'error',
+      finalAnalysis: null,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      durationMs: Date.now() - startTime,
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
