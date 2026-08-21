@@ -16,8 +16,17 @@ import {
   type ToolResultStepPayload,
   type FinalizeInvestigationParams,
 } from './ledger';
+import {
+  buildSystemPrompt,
+  resolveTriageProvider,
+  runTriage,
+  type ClientAIProvider,
+  type TriageProvider,
+} from './triage-provider';
 
-export type AIProvider = 'anthropic' | 'ollama';
+/** @deprecated Prefer TriageProvider for server-side routing; kept for client Cloud/Local toggle. */
+export type AIProvider = ClientAIProvider;
+export type { TriageProvider, ClientAIProvider };
 
 // PAI API configuration
 const PAI_API_URL = process.env.PAI_API_URL || 'http://localhost:3001/v1/messages';
@@ -85,63 +94,6 @@ async function getApiKey(): Promise<string> {
   }
 
   throw new Error('No API key found - set WAZUH_PAI_API_KEY or ANTHROPIC_API_KEY');
-}
-
-/**
- * Format alerts as context for PAI
- */
-function formatAlertContext(alerts: WazuhAlert[]): string {
-  if (!alerts || alerts.length === 0) {
-    return '';
-  }
-
-  const lines = ['## Selected Security Alerts\n'];
-
-  for (const alert of alerts) {
-    lines.push(`### Alert: ${alert.rule.description}`);
-    lines.push(`- **Severity**: Level ${alert.rule.level} (${getSeverityLabel(alert.rule.level)})`);
-    lines.push(`- **Rule ID**: ${alert.rule.id}`);
-    lines.push(`- **Agent**: ${alert.agent?.name || 'Unknown'} (${alert.agent?.ip || 'N/A'})`);
-    lines.push(`- **Timestamp**: ${alert.timestamp}`);
-
-    if (alert.rule.mitre) {
-      lines.push(`- **MITRE ATT&CK**: ${alert.rule.mitre.id?.join(', ') || 'N/A'}`);
-      if (alert.rule.mitre.tactic?.length) {
-        lines.push(`  - Tactics: ${alert.rule.mitre.tactic.join(', ')}`);
-      }
-      if (alert.rule.mitre.technique?.length) {
-        lines.push(`  - Techniques: ${alert.rule.mitre.technique.join(', ')}`);
-      }
-    }
-
-    if (alert.srcip) lines.push(`- **Source IP**: ${alert.srcip}`);
-    if (alert.srcuser) lines.push(`- **Source User**: ${alert.srcuser}`);
-    if (alert.dstip) lines.push(`- **Destination IP**: ${alert.dstip}`);
-    if (alert.dstport) lines.push(`- **Destination Port**: ${alert.dstport}`);
-
-    // Include Suricata signature ID if present
-    if (alert.data?.alert?.signature_id) {
-      lines.push(`- **Suricata SID**: ${alert.data.alert.signature_id}`);
-    }
-
-    if (alert.full_log) {
-      lines.push(`- **Log**: \`${alert.full_log.slice(0, 200)}${alert.full_log.length > 200 ? '...' : ''}\``);
-    }
-
-    lines.push('');
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * Get severity label from level
- */
-function getSeverityLabel(level: number): string {
-  if (level >= 12) return 'CRITICAL';
-  if (level >= 7) return 'HIGH';
-  if (level >= 3) return 'MEDIUM';
-  return 'LOW';
 }
 
 /**
@@ -334,62 +286,6 @@ function formatSearchResults(searchResult: { results: any[]; total: number; erro
 }
 
 /**
- * Send a chat message via Ollama's OpenAI-compatible API
- */
-async function sendOllamaMessage(
-  userMessage: string,
-  chatHistory: PAIChatMessage[],
-  alertContext: WazuhAlert[] | undefined,
-  ollamaUrl: string,
-  ollamaModel: string,
-): Promise<PAIChatResponse> {
-  try {
-    const systemPrompt = buildSystemPrompt(alertContext);
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...chatHistory.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: userMessage },
-    ];
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min timeout
-
-    const response = await fetch(`${ollamaUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages,
-        max_tokens: 2048,
-        stream: false,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Ollama API error:', response.status, errorText);
-      return { success: false, error: `Ollama error: ${response.status} - is Ollama running at ${ollamaUrl}?` };
-    }
-
-    const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content || '';
-
-    return { success: true, content };
-  } catch (error: any) {
-    console.error('Ollama error:', error);
-    if (error?.name === 'AbortError') {
-      return { success: false, error: 'Ollama request timed out (2 min). Try a smaller model for faster responses.' };
-    }
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: `Ollama connection failed: ${msg}. Is Ollama running?` };
-  }
-}
-
-/**
  * Fetch available models from Ollama
  */
 export async function getOllamaModels(ollamaUrl: string): Promise<string[]> {
@@ -401,35 +297,6 @@ export async function getOllamaModels(ollamaUrl: string): Promise<string[]> {
   } catch {
     return [];
   }
-}
-
-/**
- * Build the system prompt (shared between providers)
- */
-function buildSystemPrompt(alertContext?: WazuhAlert[]): string {
-  return `You are a senior security analyst mentoring a junior SOC analyst through Wazuh SIEM alert triage.
-Your expertise spans:
-- Threat detection and incident response
-- MITRE ATT&CK framework
-- Network security and log analysis
-- Compliance frameworks (PCI DSS, HIPAA, GDPR, NIST)
-- Remediation recommendations
-
-## How to Respond
-
-**Always structure your analysis to guide the analyst's thinking, not just give answers:**
-
-1. **What is this?** — Explain the alert in plain language. What triggered it, and what does it mean?
-2. **Why does it matter?** — Assess severity and potential impact. Is this urgent or noise?
-3. **How do I know?** — Show your reasoning. What fields in the alert led to your conclusion? Teach the analyst what to look at.
-4. **What do I do next?** — Give specific, actionable next steps in priority order. Include exact commands, queries, or procedures when applicable.
-5. **What should I watch for?** — Related IOCs, follow-up alerts, or escalation triggers that indicate the situation is worsening.
-
-**Tone:** Direct and practical. Explain *why* behind each recommendation so the analyst builds intuition over time. Use markdown formatting — headers, bold, bullet lists, and code blocks — for readability.
-
-If multiple alerts are provided, look for patterns or correlations.
-
-${alertContext ? formatAlertContext(alertContext) : ''}`;
 }
 
 /**
@@ -472,9 +339,14 @@ function safeFinalize(
  * Send a chat message to PAI with optional alert context
  * Supports tool use loop for Wazuh Indexer search (Anthropic only)
  *
- * LEDGER SCOPE: only the Anthropic path is recorded. The Ollama path returns
- * before any ledger call, because it has no tool-use loop to replay -- there is
- * no multi-step investigation to reconstruct. Instrument it here if that changes.
+ * Routing (TRIAGE_PROVIDER, default claude):
+ *  - Client Local toggle (`ollama`) always uses local Ollama.
+ *  - Otherwise TRIAGE_PROVIDER selects claude (ssh `claude -p`), ollama, or
+ *    anthropic (paid Messages API with tool use, below).
+ *
+ * LEDGER SCOPE: only the Anthropic path is recorded. Claude CLI and Ollama
+ * have no tool-use loop to replay, so there is no multi-step investigation to
+ * reconstruct. Instrument them here if that changes.
  */
 export async function sendChatMessage(
   userMessage: string,
@@ -485,19 +357,24 @@ export async function sendChatMessage(
   ollamaUrl?: string,
   ollamaModel?: string,
 ): Promise<PAIChatResponse> {
-  // Route to Ollama if selected
-  if (provider === 'ollama') {
-    if (!ollamaModel) {
-      return { success: false, error: 'No Ollama model selected. Open settings to choose a model.' };
+  const resolved = resolveTriageProvider(provider);
+
+  // Claude CLI and Ollama live in triage-provider.ts (reusable by batch auto-triage).
+  if (resolved !== 'anthropic') {
+    // Local toggle with no model chosen: fail loud rather than guessing.
+    if (provider === 'ollama' && !ollamaModel) {
+      return {
+        success: false,
+        error: 'No Ollama model selected. Open settings to choose a model.',
+      };
     }
-    return sendOllamaMessage(
-      userMessage,
-      chatHistory,
-      alertContext,
-      ollamaUrl || 'http://localhost:11434',
+    return runTriage(userMessage, chatHistory, alertContext, {
+      provider: resolved,
+      ollamaUrl,
       ollamaModel,
-    );
+    });
   }
+
   const startTime = Date.now();
   let investigationId: string | undefined;
   let seq = 0;

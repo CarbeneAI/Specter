@@ -132,7 +132,7 @@ const quickActions = [
               :class="provider === 'anthropic'
                 ? 'bg-accent-blue text-white'
                 : 'text-text-tertiary hover:text-text-secondary'"
-              title="Cloud AI (Anthropic Claude)"
+              title="Cloud AI (server TRIAGE_PROVIDER: claude CLI by default)"
               @click="emit('setProvider', 'anthropic')"
             >
               <Cloud class="w-3 h-3" />

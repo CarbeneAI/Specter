@@ -62,6 +62,9 @@ const ENV_KEYS = [
   'WAZUH_DASHBOARD_PASSWORD',
   'ANTHROPIC_API_KEY',
   'WAZUH_PAI_API_KEY',
+  // Force the legacy Anthropic path for the no-key degradation test. Default
+  // TRIAGE_PROVIDER is now `claude` (ssh CLI), which would not exercise getApiKey().
+  'TRIAGE_PROVIDER',
   // pai-client.ts's getApiKey() falls back to a key FILE when both env vars are
   // unset (default `~/.claude/.env`). On a developer machine that file exists and
   // would satisfy the lookup, so this suite would silently stop testing the no-key
@@ -100,6 +103,8 @@ beforeAll(async () => {
   // supplies a real key and the no-key assertions pass vacuously.
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.WAZUH_PAI_API_KEY;
+  // Pin the anthropic backend so /chat still hits getApiKey() (not claude-cli/ollama).
+  process.env.TRIAGE_PROVIDER = 'anthropic';
   process.env.SPECTER_ENV_FILE = join(tmpDir, 'no-such-key-file.env');
 
   originalFetch = globalThis.fetch;

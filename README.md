@@ -87,7 +87,7 @@ Data source identification, pseudo-detection rule generation, and attack pattern
 | Runtime | Bun |
 | Frontend | Vue 3 + Vite + Tailwind CSS |
 | Backend | Bun HTTP + WebSocket server |
-| AI | Anthropic Claude API (tool use) or Ollama (local) |
+| AI | Claude CLI over SSH (default), Ollama (local), or Anthropic API |
 | Theme | CarbeneAI dark (cyan/purple) |
 | Icons | Lucide Vue |
 
@@ -95,7 +95,7 @@ Data source identification, pseudo-detection rule generation, and attack pattern
 
 - [Bun](https://bun.sh) v1.0+
 - Wazuh SIEM instance (self-hosted)
-- [Anthropic API key](https://console.anthropic.com) (for cloud AI chat) **or** [Ollama](https://ollama.com) (for local AI)
+- Claude Max on a Mac Studio reachable over SSH (default triage), **or** [Ollama](https://ollama.com) (local), **or** an [Anthropic API key](https://console.anthropic.com) with credits (`TRIAGE_PROVIDER=anthropic`)
 - SSH access to Suricata/Wazuh hosts (optional, for rule suppression)
 
 ## Quick Start
@@ -118,8 +118,14 @@ Edit `.env` and set at minimum:
 ```bash
 WAZUH_DASHBOARD_URL=https://your-wazuh-server
 WAZUH_DASHBOARD_PASSWORD=your-admin-password
-ANTHROPIC_API_KEY=sk-ant-...
+TRIAGE_PROVIDER=claude
+# CLAUDE_CLI_SSH_HOST=user@mac-studio
+# Optional local fallback:
+# OLLAMA_URL=http://localhost:11434
+# OLLAMA_MODEL=gemma4:31b
 ```
+
+`TRIAGE_PROVIDER=claude` (the default) does **not** call `api.anthropic.com`. It sshes to the Studio and runs `claude -p` on the existing Claude Max subscription. Set `TRIAGE_PROVIDER=anthropic` only if you intentionally want the paid Messages API (requires `ANTHROPIC_API_KEY` with a non-zero balance).
 
 ### 3. Install dependencies
 
@@ -180,23 +186,21 @@ When you click an alert and use the chat panel:
 
 1. The selected alert is included as context in the system prompt
 2. The AI structures responses to guide analyst thinking (What/Why/How/Next/Watch)
-3. Claude can call `search_wazuh_alerts` tool to query your Wazuh Indexer for historical data (cloud mode)
-4. Up to 3 tool call iterations for deep correlation
+3. With `TRIAGE_PROVIDER=anthropic`, Claude can call `search_wazuh_alerts` to query your Wazuh Indexer (tool use). The default `claude` CLI path and Ollama do not use tools.
+4. Up to 3 tool call iterations for deep correlation (Anthropic path only)
 5. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE ATT&CK/D3FEND mapping
 
-### Cloud vs Local AI
+### Triage providers (`TRIAGE_PROVIDER`)
 
-Use the **Cloud/Local toggle** in the chat panel header to switch providers:
+Server-side switch in `.env`. The chat panel **Local** toggle still forces Ollama; **Cloud** uses whatever `TRIAGE_PROVIDER` selects.
 
-| | Cloud (Anthropic) | Local (Ollama) |
-|---|---|---|
-| **Model** | Claude Sonnet | Any Ollama model (llama3.1, gemma4, etc.) |
-| **Data privacy** | Sent to Anthropic API | Stays on your network |
-| **Wazuh search** | Autonomous tool use | Not available |
-| **Speed** | Fast | Depends on model size and hardware |
-| **Cost** | API usage fees | Free (your hardware) |
+| Provider | Backend | Cost | Notes |
+|---|---|---|---|
+| `claude` (default) | ssh + `claude -p` on Mac Studio | $0 marginal (Claude Max) | Falls back to Ollama on CLI/ssh failure. Never sets `ANTHROPIC_API_KEY` on the remote side. |
+| `ollama` | Local Ollama `/api/chat` | Free (your hardware) | Bun `timeout: false` so slow 31B generations survive past 300s. |
+| `anthropic` | Paid Messages API | API usage fees | Legacy path with Wazuh tool use + investigation ledger. |
 
-**Ollama setup**: Click the gear icon when Local is selected to configure the Ollama URL and select a model. Settings persist across sessions. Smaller models (8B) respond in seconds; larger models (30B+) may take over a minute.
+**Ollama setup**: Click the gear icon when Local is selected to configure the Ollama URL and select a model. Settings persist across sessions. Smaller models (8B) respond in seconds; larger models (30B+) may take minutes.
 
 ## Alert Suppression
 

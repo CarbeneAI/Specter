@@ -166,7 +166,8 @@ export interface QuickPrompts {
   mitre: string;
 }
 
-export type AIProvider = 'anthropic' | 'ollama';
+/** Cloud/Local toggle. Server routes Cloud via TRIAGE_PROVIDER (default claude). */
+export type AIProvider = 'anthropic' | 'ollama' | 'claude';
 
 export interface AIProviderConfig {
   provider: AIProvider;
