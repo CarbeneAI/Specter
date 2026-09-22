@@ -120,6 +120,10 @@ WAZUH_DASHBOARD_URL=https://your-wazuh-server
 WAZUH_DASHBOARD_PASSWORD=your-admin-password
 TRIAGE_PROVIDER=claude
 # CLAUDE_CLI_SSH_HOST=user@mac-studio
+# Optional: historical correlation during triage (see below). Both are required
+# together; unset means triage runs without alert history.
+# QUERY_INDEXER_PATH=/abs/path/on/the/ssh/host/QueryIndexer.ts
+# QUERY_INDEXER_ENV=~/path/to/env-file-holding-WAZUH_DASHBOARD_PASSWORD
 # Optional local fallback:
 # OLLAMA_URL=http://localhost:11434
 # OLLAMA_MODEL=gemma4:31b
@@ -185,10 +189,45 @@ Full design, schema, and testing strategy: [docs/architecture-scorer-ledger.md](
 When you click an alert and use the chat panel:
 
 1. The selected alert is included as context in the system prompt
-2. The AI structures responses to guide analyst thinking (What/Why/How/Next/Watch)
-3. With `TRIAGE_PROVIDER=anthropic`, Claude can call `search_wazuh_alerts` to query your Wazuh Indexer (tool use). The default `claude` CLI path and Ollama do not use tools.
-4. Up to 3 tool call iterations for deep correlation (Anthropic path only)
+2. **Specter runs a read-only historical lookup itself** and injects the result
+   into the prompt, so the model already knows whether this alert is new or
+   recurring before it starts reasoning (see below)
+3. The AI structures responses to guide analyst thinking (What/Why/How/Next/Watch)
+4. With `TRIAGE_PROVIDER=anthropic`, Claude can additionally call
+   `search_wazuh_alerts` as a tool, with up to 3 iterations. The `claude` CLI
+   path and Ollama do not use tools — they get the history injected instead.
 5. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE ATT&CK/D3FEND mapping
+
+### Historical correlation
+
+Set `QUERY_INDEXER_PATH` and `QUERY_INDEXER_ENV` to enable it. Before each
+triage, Specter runs a read-only `_search`/`_count` query on the ssh host and
+puts the result in the system prompt:
+
+```
+full history: 3458 alert(s) across 65 distinct day(s)
+  first seen: 2025-12-20  last seen: 2026-09-17
+  VERDICT: RECURRING. Stale noise or an unremediated gap, not a new event.
+```
+
+**Why the server runs this instead of granting the model a shell.** The
+`claude` CLI path passes `--disallowedTools Bash Edit Write Read WebSearch
+WebFetch`, so the model has no shell by design, and it used to answer *"this
+session doesn't have a local shell/Bash tool available"* when asked for
+history. Granting a scoped `--allowedTools 'Bash(...)'` was tried and reverted:
+that flag is variadic, so the scope did not hold and a denial test had the
+model run `whoami && ls ~/.ssh` on the ssh host. Wazuh alert text is
+attacker-influenced, so a shell there is not an acceptable default.
+
+Running the lookup server-side is also simply better: the history is
+**deterministic** — always present, never dependent on the model choosing to
+ask, which matters for unattended scheduled triage — and it adds no attack
+surface. Rule IDs must match `^\d{1,10}$` and agent IPs a dotted quad before
+they reach the shell. A failed lookup renders *"historical lookup unavailable"*
+so the model cannot imply it checked.
+
+Read the verdict from **full retained history, not the `--days` window**: a
+short window or a sensor outage makes a long-running alert look brand new.
 
 ### Triage providers (`TRIAGE_PROVIDER`)
 
