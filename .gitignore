@@ -46,3 +46,8 @@ apps/server/suricata-disable.conf
 # Emitted by `vue-tsc -b` alongside the real vite.config.ts
 apps/client/vite.config.js
 apps/client/vite.config.d.ts
+.env.*
+*.bak
+*.bak-*
+*.bak.*
+!.env.example

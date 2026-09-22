@@ -19,6 +19,7 @@
  */
 
 import type { WazuhAlert, PAIChatMessage, PAIChatResponse } from './types';
+import { fetchAlertHistory, formatAlertHistory } from './alert-history';
 
 export type TriageProvider = 'claude' | 'ollama' | 'anthropic';
 
@@ -129,7 +130,10 @@ export function formatAlertContext(alerts: WazuhAlert[]): string {
 /**
  * Build the system prompt (shared across triage backends).
  */
-export function buildSystemPrompt(alertContext?: WazuhAlert[]): string {
+export function buildSystemPrompt(
+  alertContext?: WazuhAlert[],
+  historyBlock?: string,
+): string {
   return `You are a senior security analyst mentoring a junior SOC analyst through Wazuh SIEM alert triage.
 Your expertise spans:
 - Threat detection and incident response
@@ -152,7 +156,8 @@ Your expertise spans:
 
 If multiple alerts are provided, look for patterns or correlations.
 
-${alertContext ? formatAlertContext(alertContext) : ''}`;
+${alertContext ? formatAlertContext(alertContext) : ''}
+${historyBlock ?? ''}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +194,17 @@ export async function sendClaudeCliMessage(
   const bin = process.env.CLAUDE_CLI_BIN ?? '/opt/homebrew/bin/claude';
   const timeoutMs = Number(process.env.CLAUDE_CLI_TIMEOUT_MS ?? 900_000);
 
-  const systemPrompt = systemPromptOverride ?? buildSystemPrompt(alertContext);
+  // Run the historical lookup HERE, not in the model. See alert-history.ts for
+  // why the tool grant was tried and reverted. Failure is non-fatal: triage
+  // without history beats no triage, and the block says the lookup failed so the
+  // model cannot silently imply it checked.
+  const primary = alertContext?.[0];
+  const alertHistory = primary?.rule?.id
+    ? await fetchAlertHistory(primary.rule.id, primary.agent?.ip)
+    : null;
+  const historyBlock = formatAlertHistory(alertHistory);
+  const systemPrompt =
+    systemPromptOverride ?? buildSystemPrompt(alertContext, historyBlock);
   const history = chatHistory
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n\n');
