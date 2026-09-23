@@ -17,6 +17,7 @@ import type { ScoreBand } from './scorer';
 import { sendChatMessage, searchWazuhAlerts, getOllamaModels, QUICK_PROMPTS } from './pai-client';
 import type { AIProvider } from './pai-client';
 import { suppressSuricataRule, getSuppressedSIDs } from './suricata-suppression';
+import { createMute, deleteMute, listMutes } from './mutes';
 import { listInvestigations, getInvestigation } from './ledger';
 
 // GET /ledger/:id -- :id must be a well-formed UUID. Validated by regex BEFORE
@@ -93,7 +94,7 @@ const server = Bun.serve({
     const corsOrigin = origin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : '';
     const headers: Record<string, string> = {
       'Access-Control-Allow-Origin': corsOrigin || ALLOWED_ORIGIN,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Allow-Credentials': 'true',
       'Vary': 'Origin',
@@ -311,6 +312,71 @@ const server = Bun.serve({
       return new Response(JSON.stringify(result), {
         headers: { ...headers, 'Content-Type': 'application/json' },
       });
+    }
+
+    // ─── Alert mutes (Specter-side, no SSH) ──────────────────────────
+    // A mute hides an alert in this dashboard. Unlike /alerts/suppress it does
+    // NOT disable anything on the sensor or the Wazuh manager: the alert is
+    // still ingested, scored, and searchable. Keyed on rule id + source IP.
+
+    // GET /alerts/mutes - list active mutes (?includeExpired=1 for history)
+    if (url.pathname === '/alerts/mutes' && req.method === 'GET') {
+      const includeExpired = url.searchParams.get('includeExpired') === '1';
+      return new Response(JSON.stringify({ mutes: listMutes(includeExpired) }), {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /alerts/mutes - create or refresh a mute
+    if (url.pathname === '/alerts/mutes' && req.method === 'POST') {
+      try {
+        const body = await req.json() as Record<string, unknown>;
+        if (body.ruleId === undefined || body.ruleId === null || body.ruleId === '') {
+          return new Response(
+            JSON.stringify({ success: false, error: 'ruleId is required' }),
+            { status: 400, headers: { ...headers, 'Content-Type': 'application/json' } }
+          );
+        }
+        const result = createMute({
+          ruleId: String(body.ruleId),
+          srcip: body.srcip === undefined || body.srcip === null ? '' : String(body.srcip),
+          description: body.description === undefined ? '' : String(body.description),
+          reason: body.reason === undefined ? '' : String(body.reason),
+          ttlDays: body.ttlDays === undefined ? undefined : Number(body.ttlDays),
+          createdBy: akUser,
+        });
+        return new Response(JSON.stringify(result), {
+          status: result.success ? 200 : 400,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('Mute error:', error);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Invalid request' }),
+          { status: 400, headers: { ...headers, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // DELETE /alerts/mutes - remove a mute (unmute)
+    if (url.pathname === '/alerts/mutes' && req.method === 'DELETE') {
+      try {
+        const body = await req.json() as Record<string, unknown>;
+        const result = deleteMute(
+          String(body.ruleId ?? ''),
+          body.srcip === undefined || body.srcip === null ? '' : String(body.srcip),
+        );
+        return new Response(JSON.stringify(result), {
+          status: result.success ? 200 : 400,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('Unmute error:', error);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Invalid request' }),
+          { status: 400, headers: { ...headers, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // GET /settings/ollama-models - Fetch available Ollama models

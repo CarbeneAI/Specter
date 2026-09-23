@@ -127,6 +127,53 @@ export interface InvestigationDetail extends InvestigationSummary {
 
 export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low';
 
+// ---------------------------------------------------------------------------
+// Alert mutes -- hand-mirrored from apps/server/src/mutes.ts.
+//
+// A mute hides an alert in this dashboard only. The alert is still ingested,
+// still scored, and still searchable in Wazuh. That is the difference between a
+// mute and the upstream "suppress" path, which disables the signature at the
+// sensor / manager and destroys the data.
+// ---------------------------------------------------------------------------
+
+export interface Mute {
+  id: number;
+  ruleId: string;
+  /** '*' = this rule from any source. '' = alerts carrying no source IP. */
+  srcip: string;
+  description: string;
+  reason: string;
+  createdAt: string;
+  /** ISO timestamp, or null for a mute that never expires. */
+  expiresAt: string | null;
+  createdBy: string;
+}
+
+/** Wildcard srcip meaning "this rule from any source". */
+export const SRCIP_ANY = '*';
+
+/** Default mute lifetime in days. Keep in sync with the server. */
+export const DEFAULT_MUTE_TTL_DAYS = 30;
+
+/**
+ * One collapsed row in the feed: every alert sharing a rule id + source IP.
+ * `latest` is the newest member and drives the row's rendering.
+ */
+export interface AlertGroup {
+  key: string;
+  ruleId: string;
+  srcip: string;
+  description: string;
+  count: number;
+  latest: WazuhAlert;
+  /** Newest first, including `latest`. */
+  alerts: WazuhAlert[];
+  firstSeen: string;
+  lastSeen: string;
+  /** Highest rule level in the group -- a group is as severe as its worst member. */
+  maxLevel: number;
+}
+
 export interface AlertStats {
   total: number;
   critical: number;

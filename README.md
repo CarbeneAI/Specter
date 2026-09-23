@@ -241,14 +241,57 @@ Server-side switch in `.env`. The chat panel **Local** toggle still forces Ollam
 
 **Ollama setup**: Click the gear icon when Local is selected to configure the Ollama URL and select a model. Settings persist across sessions. Smaller models (8B) respond in seconds; larger models (30B+) may take minutes.
 
-## Alert Suppression
+## Muting vs Suppression
 
-Two suppression mechanisms:
+Two different things, deliberately kept apart.
 
-- **Suricata SID**: Updates `disable.conf` via SCP, runs `suricata-update`, reloads rules
-- **Wazuh Rule**: Adds `level="0" overwrite="yes"` to `local_rules.xml`, restarts Wazuh manager
+### Muting (default, no SSH required)
 
-Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` env vars with SSH key auth configured.
+A **mute** hides an alert in the Specter feed. The alert is still ingested,
+still scored, still written to Wazuh, and still searchable for hunting. Nothing
+on the sensor changes.
+
+- Keyed on **rule ID + source IP**, so muting "Telegram SNI from my phone" does
+  not mute the same signature coming from a server that has no business talking
+  to Telegram. Tick "any source" in the dialog for a rule-wide mute.
+- **Time-boxed**, 30 days by default (7 / 30 / 90 / never). An expired mute
+  stops hiding immediately and the alerts resurface for review, so a SIEM can't
+  quietly go dark because of a decision made months ago.
+- Always visible: an amber strip above the feed states how many alerts are
+  currently hidden and by how many mutes. Expanding it lists each mute with its
+  reason and expiry, and unmutes in one click.
+- Stored in `data/mutes.sqlite` (`MUTES_DB_PATH`), separate from the ledger DB.
+
+Use this for known-good noise: your own Telegram, Tailscale DERP, SSDP from the
+router.
+
+### Suppression (upstream, requires SSH)
+
+A **suppression** disables the signature at the source. The alert stops being
+generated, so it is gone from Wazuh too — you lose it for hunting and for the
+scorer's frequency signal.
+
+- **Suricata SID**: updates `disable.conf` via SCP, runs `suricata-update`, reloads rules
+- **Wazuh Rule**: adds `level="0" overwrite="yes"` to `local_rules.xml`, restarts Wazuh manager
+
+Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` with SSH key auth. If they are
+unset, the suppress action returns
+`SURICATA_SSH_HOST environment variable not configured` — that is by design, not
+a bug. Prefer a mute unless the signature is genuinely worthless to you.
+
+## Alert Grouping
+
+The feed collapses alerts into **rule + source IP** groups by default (the same
+key a mute uses, so "mute this group" means exactly what it says). One 24h window
+on a live homelab was 15,101 alerts of which 2 were level 8+; grouped, that is a
+few dozen rows.
+
+- Collapsed rows show a count badge and the first-seen → last-seen span; expand
+  to see every member.
+- A group carries the **highest** rule level among its members, so one level-12
+  alert inside thousands of ET INFO still renders as critical instead of hiding.
+- A group of one renders as a plain alert row.
+- The **Grouped / Flat** toggle above the feed switches back to the raw stream.
 
 ## API Reference
 
@@ -265,8 +308,11 @@ Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` env vars with SSH key auth con
 | POST | `/chat` | AI chat message |
 | GET | `/chat/prompts` | Quick prompt templates |
 | POST | `/alerts/search` | Search Wazuh Indexer |
-| POST | `/alerts/suppress` | Suppress a rule |
+| POST | `/alerts/suppress` | Suppress a rule upstream (needs SSH) |
 | GET | `/alerts/suppressed` | List suppressed rules |
+| GET | `/alerts/mutes?includeExpired=1` | List mutes (active by default) |
+| POST | `/alerts/mutes` | Create/refresh a mute (`ruleId`, `srcip`, `reason`, `ttlDays`) |
+| DELETE | `/alerts/mutes` | Unmute (`ruleId`, `srcip`) |
 | GET | `/settings/ollama-models?ollamaUrl=...` | List available Ollama models |
 | WS | `/stream` | Real-time alert stream |
 
