@@ -42,10 +42,48 @@ import { homedir } from 'node:os';
  */
 const QUERY_INDEXER = process.env.QUERY_INDEXER_PATH;
 
-/** Env file holding WAZUH_DASHBOARD_PASSWORD; without it the tool exits 2. */
+/**
+ * Env file holding WAZUH_DASHBOARD_PASSWORD; without it the tool exits 2.
+ *
+ * MUST be an absolute path as it exists ON THE REMOTE HOST. Do not write `~`
+ * here: the value is read by this process (Linux, HOME=/home/cgarrison) but
+ * used on the SSH target (macOS, HOME=/Users/cgarrison). A shell expands the
+ * tilde locally, so `~/PAI/.claude/.env` became `/home/cgarrison/PAI/...`,
+ * which does not exist on the Studio. `. <missing>` fails silently under
+ * `2>/dev/null`, the password never loads, and the tool exits 2 — the
+ * "Historical correlation — still unavailable" seen on 2026-09-23.
+ * validateRemotePaths() below refuses a tilde outright so this cannot recur.
+ */
 const REMOTE_ENV_FILE = process.env.QUERY_INDEXER_ENV;
 
 const LOOKUP_TIMEOUT_MS = Number(process.env.QUERY_INDEXER_TIMEOUT_MS ?? 60_000);
+
+/**
+ * Reject remote paths that cannot work, with a reason, instead of failing
+ * silently at query time.
+ *
+ * Returns null when the config is usable, or a human-readable problem string.
+ * Exported so `bun src/alert-history.ts --check` and tests can use it.
+ */
+export function validateRemotePaths(
+  indexerPath: string | undefined,
+  envFile: string | undefined,
+): string | null {
+  for (const [name, value] of [
+    ['QUERY_INDEXER_PATH', indexerPath],
+    ['QUERY_INDEXER_ENV', envFile],
+  ] as const) {
+    if (!value) return `${name} is not set`;
+    if (value.startsWith('~')) {
+      return `${name} uses '~', which the LOCAL shell expands to the wrong home ` +
+        `on the remote host. Write the remote absolute path instead (got '${value}').`;
+    }
+    if (!value.startsWith('/')) {
+      return `${name} must be an absolute path on the remote host (got '${value}').`;
+    }
+  }
+  return null;
+}
 
 export interface AlertHistory {
   ruleId: string;
@@ -68,7 +106,17 @@ export async function fetchAlertHistory(
   sample = 3,
 ): Promise<AlertHistory | null> {
   const host = process.env.CLAUDE_CLI_SSH_HOST;
-  if (!host || !ruleId || !QUERY_INDEXER || !REMOTE_ENV_FILE) return null;
+  if (!host || !ruleId) return null;
+
+  // Misconfiguration must be loud. Previously a bad path just produced
+  // "exit 2" in the prompt, which reads like "no data" rather than
+  // "your config is wrong" — the lookup was broken for a day before anyone
+  // could tell which it was.
+  const configProblem = validateRemotePaths(QUERY_INDEXER, REMOTE_ENV_FILE);
+  if (configProblem) {
+    console.error(`[alert-history] disabled: ${configProblem}`);
+    return { ruleId, ok: false, text: `(historical lookup misconfigured: ${configProblem})` };
+  }
 
   // Rule IDs and IPs are interpolated into a remote shell command, so refuse
   // anything that is not plainly numeric / dotted-quad. Alert fields are
@@ -77,9 +125,15 @@ export async function fetchAlertHistory(
   const ipArg =
     agentIp && /^\d{1,3}(\.\d{1,3}){3}$/.test(agentIp) ? ` --agent-ip ${agentIp}` : '';
 
+  // `. <file>` without 2>/dev/null: if the env file is missing on the remote
+  // host we want that error in the output, not swallowed. A silent source
+  // failure is exactly how this broke — the tool then exits 2 for "no
+  // password" and the real cause (wrong path) never surfaced.
   const remote =
     `export PATH=$HOME/.bun/bin:/opt/homebrew/bin:$PATH; ` +
-    `set -a; . ${REMOTE_ENV_FILE} 2>/dev/null; set +a; ` +
+    `if [ ! -f ${REMOTE_ENV_FILE} ]; then echo "env file not found on remote host: ${REMOTE_ENV_FILE}"; exit 2; fi; ` +
+    `if [ ! -f ${QUERY_INDEXER} ]; then echo "indexer not found on remote host: ${QUERY_INDEXER}"; exit 2; fi; ` +
+    `set -a; . ${REMOTE_ENV_FILE}; set +a; ` +
     `bun ${QUERY_INDEXER} --rule-id ${ruleId}${ipArg} --days ${days} --sample ${sample} 2>&1`;
 
   return new Promise<AlertHistory | null>((resolve) => {
@@ -105,9 +159,17 @@ export async function fetchAlertHistory(
       clearTimeout(killer);
       const ok = code === 0 || code === 10;
       if (!ok || !out.trim()) {
-        // Degrade quietly: triage without history beats no triage. The prompt
-        // says so explicitly so the model does not claim history was checked.
-        resolve({ ruleId, ok: false, text: `(historical lookup unavailable: exit ${code})` });
+        // Degrade quietly for the analyst, but say WHY in the server log and
+        // carry the tool's own message into the prompt. "exit 2" alone is
+        // unactionable; exit 2 means bad usage or a missing password, which is
+        // almost always a path problem, not an absent history.
+        const detail = out.trim() ? ` — ${out.trim().split('\n')[0]}` : '';
+        console.error(`[alert-history] lookup failed (exit ${code})${detail}`);
+        resolve({
+          ruleId,
+          ok: false,
+          text: `(historical lookup unavailable: exit ${code}${detail})`,
+        });
         return;
       }
       resolve({ ruleId, ok: true, text: out.trim() });
@@ -133,4 +195,40 @@ ${h.text}
 window or a sensor outage makes a long-running alert look brand new; the tool
 flags that disagreement when it sees one. Quote the full-history figures.
 `;
+}
+
+// ---------------------------------------------------------------------------
+// Self-check: `bun src/alert-history.ts --check [ruleId] [agentIp]`
+//
+// Run this when triage reports the history block as unavailable. It prints the
+// resolved config, the validation result, and a live end-to-end lookup, so a
+// path problem is distinguishable from "no matching alerts" without reading
+// any code.
+// ---------------------------------------------------------------------------
+if (import.meta.main && process.argv.includes('--check')) {
+  const args = process.argv.slice(2).filter((a) => a !== '--check');
+  const ruleId = args[0] ?? '5715';
+  const agentIp = args[1];
+
+  console.log('CLAUDE_CLI_SSH_HOST =', process.env.CLAUDE_CLI_SSH_HOST ?? '(unset)');
+  console.log('QUERY_INDEXER_PATH  =', QUERY_INDEXER ?? '(unset)');
+  console.log('QUERY_INDEXER_ENV   =', REMOTE_ENV_FILE ?? '(unset)');
+
+  const problem = validateRemotePaths(QUERY_INDEXER, REMOTE_ENV_FILE);
+  console.log('\nconfig:', problem ? `INVALID — ${problem}` : 'ok');
+
+  if (!process.env.CLAUDE_CLI_SSH_HOST) {
+    console.log('\nCLAUDE_CLI_SSH_HOST unset — lookup is disabled entirely.');
+    process.exit(1);
+  }
+
+  console.log(`\nlive lookup: rule ${ruleId}${agentIp ? ` from ${agentIp}` : ''} ...`);
+  const result = await fetchAlertHistory(ruleId, agentIp);
+  if (!result) {
+    console.log('RESULT: disabled (missing host or rule id)');
+    process.exit(1);
+  }
+  console.log(result.ok ? 'RESULT: OK\n' : 'RESULT: FAILED\n');
+  console.log(result.text);
+  process.exit(result.ok ? 0 : 1);
 }
