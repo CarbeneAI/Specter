@@ -3,13 +3,15 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { LayoutDashboard, History } from 'lucide-vue-next';
 import AlertStats from './components/AlertStats.vue';
 import AlertFeed from './components/AlertFeed.vue';
+import MutedPanel from './components/MutedPanel.vue';
 import ChatPanel from './components/ChatPanel.vue';
 import ToastContainer from './components/Toast.vue';
 import LedgerView from './components/LedgerView.vue';
 import { useWebSocket } from './composables/useWebSocket';
 import { usePAIChat } from './composables/usePAIChat';
 import { useToast } from './composables/useToast';
-import type { WazuhAlert, AlertStats as AlertStatsType, SeverityLevel, QuickPrompts, AIProvider } from './types';
+import type { WazuhAlert, AlertStats as AlertStatsType, SeverityLevel, QuickPrompts, AIProvider, Mute } from './types';
+import { isMutedClient } from './composables/useMutes';
 
 // View toggle (Live Dashboard <-> Ledger). Purely additive: the WebSocket
 // connection and chat composable below are set up unconditionally regardless
@@ -41,6 +43,24 @@ const API_URL = getApiUrl();
 const suppressedWazuhIds = ref<Set<string>>(new Set());
 const suppressedSuricataIds = ref<Set<string>>(new Set());
 
+// Active mutes (Specter-side only — the alert still reaches Wazuh, we just
+// don't render it). Fetched on mount and polled alongside the suppressed list.
+const mutes = ref<Mute[]>([]);
+
+async function fetchMutes() {
+  try {
+    const response = await fetch(`${API_URL}/alerts/mutes`, {
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (Array.isArray(data.mutes)) {
+      mutes.value = data.mutes as Mute[];
+    }
+  } catch {
+    // Silently fail - alerts just won't be muted
+  }
+}
+
 // Fetch suppressed rules from server
 async function fetchSuppressedRules() {
   try {
@@ -71,7 +91,11 @@ let suppressionPollTimer: ReturnType<typeof setInterval> | undefined;
 
 onMounted(() => {
   fetchSuppressedRules();
-  suppressionPollTimer = setInterval(fetchSuppressedRules, 15000);
+  fetchMutes();
+  suppressionPollTimer = setInterval(() => {
+    fetchSuppressedRules();
+    fetchMutes();
+  }, 15000);
 });
 
 onUnmounted(() => {
@@ -81,7 +105,7 @@ onUnmounted(() => {
 // Dismissed individual alert IDs (client-side only, resets on refresh)
 const dismissedAlertIds = ref<Set<number>>(new Set());
 
-// Filter out suppressed and dismissed alerts
+// Filter out suppressed, muted, and dismissed alerts
 const visibleAlerts = computed(() => {
   return alerts.value.filter(a => {
     // Check individually dismissed
@@ -91,6 +115,8 @@ const visibleAlerts = computed(() => {
     // Check Suricata SID suppression
     const sid = a.data?.alert?.signature_id;
     if (sid && suppressedSuricataIds.value.has(String(sid))) return false;
+    // Check Specter-side mute (rule + srcip)
+    if (isMutedClient(a, mutes.value)) return false;
     return true;
   });
 });
@@ -103,6 +129,22 @@ const suppressedCount = computed(() => {
     if (suppressedWazuhIds.value.has(a.rule.id)) { count++; continue; }
     const sid = a.data?.alert?.signature_id;
     if (sid && suppressedSuricataIds.value.has(String(sid))) { count++; }
+  }
+  return count;
+});
+
+// Count of alerts hidden by a Specter-side mute. Counted separately from
+// suppression because the two mean different things: a muted alert is still in
+// Wazuh, a suppressed one was never written.
+const mutedCount = computed(() => {
+  if (mutes.value.length === 0) return 0;
+  let count = 0;
+  for (const a of alerts.value) {
+    if (a.id !== undefined && dismissedAlertIds.value.has(a.id)) continue;
+    if (suppressedWazuhIds.value.has(a.rule.id)) continue;
+    const sid = a.data?.alert?.signature_id;
+    if (sid && suppressedSuricataIds.value.has(String(sid))) continue;
+    if (isMutedClient(a, mutes.value)) count++;
   }
   return count;
 });
@@ -234,55 +276,93 @@ const handleDismiss = (alert: WazuhAlert) => {
   }
 };
 
-// Handle alert suppression
-const handleSuppress = async (ruleId: string, reason: string, description: string, suricataSid?: string) => {
-  const label = suricataSid ? `Suricata SID ${suricataSid}` : `Rule ${ruleId}`;
+// Handle a mute: hide this rule+srcip in Specter only. The alert keeps flowing
+// into Wazuh, keeps being scored, and stays searchable — this is deliberately
+// NOT the upstream suppress path, which disables the signature at the sensor.
+const handleMute = async (
+  ruleId: string,
+  srcip: string,
+  reason: string,
+  description: string,
+  ttlDays: number,
+) => {
+  const scope = srcip === '*' ? 'any source' : (srcip || 'no source IP');
+  const ttlLabel = ttlDays === 0 ? 'indefinitely' : `for ${ttlDays} days`;
 
-  // Optimistically hide alerts immediately — don't wait for the SSH round-trip
-  if (suricataSid) {
-    suppressedSuricataIds.value = new Set([...suppressedSuricataIds.value, suricataSid]);
-  } else {
-    suppressedWazuhIds.value = new Set([...suppressedWazuhIds.value, ruleId]);
-  }
-  toast.success(`${label} suppressed — applying on server...`);
+  // Optimistically hide immediately. Uses a synthetic id/createdAt; the next
+  // poll replaces this with the server's authoritative row.
+  const optimistic: Mute = {
+    id: -1,
+    ruleId,
+    srcip,
+    description,
+    reason,
+    createdAt: new Date().toISOString(),
+    expiresAt: ttlDays === 0
+      ? null
+      : new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000).toISOString(),
+    createdBy: 'you',
+  };
+  const previous = mutes.value;
+  mutes.value = [...previous, optimistic];
+  toast.success(`Muted rule ${ruleId} from ${scope} ${ttlLabel}`);
 
   try {
-    const response = await fetch(`${API_URL}/alerts/suppress`, {
+    const response = await fetch(`${API_URL}/alerts/mutes`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ruleId, reason, description, suricataSid }),
+      body: JSON.stringify({ ruleId, srcip, reason, description, ttlDays }),
     });
-
     const data = await response.json();
-
     if (!data.success) {
-      // Roll back optimistic update
-      if (suricataSid) {
-        const rolled = new Set(suppressedSuricataIds.value);
-        rolled.delete(suricataSid);
-        suppressedSuricataIds.value = rolled;
-      } else {
-        const rolled = new Set(suppressedWazuhIds.value);
-        rolled.delete(ruleId);
-        suppressedWazuhIds.value = rolled;
-      }
-      toast.error(data.error || 'Failed to suppress rule');
+      mutes.value = previous; // roll back
+      toast.error(data.error || 'Failed to mute');
+      return;
     }
-  } catch (err) {
-    // Roll back optimistic update on network failure
-    if (suricataSid) {
-      const rolled = new Set(suppressedSuricataIds.value);
-      rolled.delete(suricataSid);
-      suppressedSuricataIds.value = rolled;
-    } else {
-      const rolled = new Set(suppressedWazuhIds.value);
-      rolled.delete(ruleId);
-      suppressedWazuhIds.value = rolled;
-    }
+    fetchMutes();
+  } catch {
+    mutes.value = previous; // roll back
     toast.error('Failed to connect to server');
   }
 };
+
+// Handle an unmute: alerts for this rule+srcip resurface immediately.
+const handleUnmute = async (ruleId: string, srcip: string) => {
+  const previous = mutes.value;
+  mutes.value = previous.filter((m: Mute) => !(m.ruleId === ruleId && m.srcip === srcip));
+
+  try {
+    const response = await fetch(`${API_URL}/alerts/mutes`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ruleId, srcip }),
+    });
+    const data = await response.json();
+    if (!data.success) {
+      mutes.value = previous; // roll back
+      toast.error(data.error || 'Failed to unmute');
+      return;
+    }
+    toast.success(`Unmuted rule ${ruleId}`);
+    fetchMutes();
+  } catch {
+    mutes.value = previous; // roll back
+    toast.error('Failed to connect to server');
+  }
+};
+
+// NOTE: upstream suppression (POST /alerts/suppress) is intentionally NOT wired
+// to any button. That path SSHes into the Suricata sensor and the Wazuh manager
+// to disable the signature at the source, which deletes the alert from Wazuh
+// entirely. With no SSH grant configured it fails with
+// "SURICATA_SSH_HOST environment variable not configured".
+// Every quieting action in the UI is a MUTE (handleMute above): the alert still
+// ingests, still scores, still reaches Wazuh, and is reversible in one click.
+// The server endpoint remains available for an operator who deliberately
+// configures SURICATA_SSH_HOST / WAZUH_SSH_HOST and calls it directly.
+
 </script>
 
 <template>
@@ -326,14 +406,21 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
     <!-- Main content area - split screen -->
     <div class="flex-1 flex overflow-hidden" :class="{ 'select-none': isResizing }">
       <!-- Left panel - Alert feed (resizable) -->
-      <div class="overflow-hidden" :style="leftPanelStyle">
+      <div class="overflow-hidden flex flex-col" :style="leftPanelStyle">
+        <!-- Muted rules strip — always visible while any mute is active -->
+        <MutedPanel
+          :mutes="mutes"
+          :muted-count="mutedCount"
+          @unmute="handleUnmute"
+        />
         <AlertFeed
+          class="flex-1 min-h-0"
           :alerts="visibleAlerts"
           :selected-alert="selectedAlert"
           :severity-filter="activeSeverityFilter"
           @select="handleSelectAlert"
           @filter="handleFilter"
-          @suppress="handleSuppress"
+          @mute="handleMute"
           @dismiss="handleDismiss"
         />
       </div>

@@ -1,0 +1,22 @@
+[Unit]
+Description=Specter Security Dashboard
+Documentation=https://github.com/CarbeneAI/Specter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# start-specter.sh, not manage.sh: manage.sh backgrounds its children and
+# returns, which Type=simple reads as the service exiting. It also runs
+# `bun run dev` with no --env-file, so the server dies on a missing
+# WAZUH_DASHBOARD_URL. The launcher sources .env and stays in the foreground.
+ExecStart=/home/cgarrison/Specter/start-specter.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+KillMode=control-group
+KillSignal=SIGTERM
+Environment=PATH=/home/cgarrison/.bun/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

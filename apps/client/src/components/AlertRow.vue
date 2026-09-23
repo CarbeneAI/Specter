@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import { ChevronRight, Server, Clock, Tag, ExternalLink, BellOff, X, FileDown, Copy, Check } from 'lucide-vue-next';
 import ScorerBadge from './ScorerBadge.vue';
 import type { WazuhAlert } from '../types';
-import { getSeverityLevel, getSeverityLabel } from '../types';
+import { getSeverityLevel, getSeverityLabel, DEFAULT_MUTE_TTL_DAYS, SRCIP_ANY } from '../types';
 
 // Suricata host that runs pcap-log with conditional:alerts. Override with VITE_PCAP_SSH if needed.
 const PCAP_SSH_TARGET = (import.meta.env.VITE_PCAP_SSH as string) || 'user@suricata-host';
@@ -16,7 +16,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', alert: WazuhAlert): void;
-  (e: 'suppress', ruleId: string, reason: string, description: string, suricataSid?: string): void;
+  // Mute, NOT upstream suppress. This hides the alert in Specter only; it still
+  // reaches Wazuh and stays searchable. The old 'suppress' emit went to the
+  // SSH path (disable.conf / local_rules.xml) and failed with
+  // "SURICATA_SSH_HOST environment variable not configured" on a host with no
+  // SSH grant -- which is every host here, by choice.
+  (e: 'mute', ruleId: string, srcip: string, reason: string, description: string, ttlDays: number): void;
   (e: 'dismiss', alert: WazuhAlert): void;
 }>();
 
@@ -32,9 +37,12 @@ const severityLabel = computed(() => getSeverityLabel(props.alert.rule.level));
 const suricataSid = computed(() => props.alert.data?.alert?.signature_id);
 const isSuricata = computed(() => !!suricataSid.value);
 
-// Suppress confirmation state
-const showSuppressConfirm = ref(false);
-const suppressReason = ref('');
+// Mute state. The mute key is rule id (Suricata SID when present) + source IP,
+// matching the server's mutes table and the feed's grouping key.
+const showMuteConfirm = ref(false);
+const muteReason = ref('');
+const muteScopeAllSources = ref(false);
+const muteTtlDays = ref(DEFAULT_MUTE_TTL_DAYS);
 
 const formattedTime = computed(() => {
   const date = new Date(props.alert.timestamp);
@@ -53,42 +61,57 @@ const formattedDate = computed(() => {
   });
 });
 
-const suppressLabel = computed(() => {
-  if (isSuricata.value) {
-    return `Suppress Suricata SID ${suricataSid.value}`;
-  }
-  return `Suppress Wazuh rule ${props.alert.rule.id}`;
-});
+// The mute key: Suricata SID when present, else the Wazuh rule id. Matches
+// alertRuleKey() in useAlertGroups.ts and the server's isMuted().
+const muteRuleId = computed(() =>
+  isSuricata.value ? String(suricataSid.value) : String(props.alert.rule.id)
+);
 
-const confirmLabel = computed(() => {
-  if (isSuricata.value) {
-    return `Suppress SID ${suricataSid.value}? This will disable the Suricata rule via suricata-update.`;
-  }
-  return `Suppress rule ${props.alert.rule.id}? This will set level=0 in Wazuh local_rules.xml and restart the manager.`;
-});
+const alertSrcip = computed(() =>
+  String(props.alert.srcip || (props.alert.data as any)?.src_ip || '')
+);
 
-const handleSuppressClick = (event: Event) => {
+const sourceLabel = computed(() => alertSrcip.value || 'no source IP');
+
+const muteLabel = computed(() =>
+  `Mute rule ${muteRuleId.value} from ${sourceLabel.value} (hides in Specter only)`
+);
+
+const muteScopeLabel = computed(() =>
+  muteScopeAllSources.value
+    ? `rule ${muteRuleId.value} from ANY source`
+    : `rule ${muteRuleId.value} from ${sourceLabel.value}`
+);
+
+const ttlLabel = computed(() =>
+  muteTtlDays.value === 0 ? 'until you unmute it' : `for ${muteTtlDays.value} days`
+);
+
+const handleMuteClick = (event: Event) => {
   event.stopPropagation();
-  showSuppressConfirm.value = true;
+  showMuteConfirm.value = true;
 };
 
-const handleConfirmSuppress = (event: Event) => {
+const handleConfirmMute = (event: Event) => {
   event.stopPropagation();
   emit(
-    'suppress',
-    props.alert.rule.id,
-    suppressReason.value,
+    'mute',
+    muteRuleId.value,
+    muteScopeAllSources.value ? SRCIP_ANY : alertSrcip.value,
+    muteReason.value,
     props.alert.rule.description,
-    isSuricata.value ? String(suricataSid.value) : undefined,
+    muteTtlDays.value,
   );
-  showSuppressConfirm.value = false;
-  suppressReason.value = '';
+  showMuteConfirm.value = false;
+  muteReason.value = '';
+  muteScopeAllSources.value = false;
+  muteTtlDays.value = DEFAULT_MUTE_TTL_DAYS;
 };
 
-const handleCancelSuppress = (event: Event) => {
+const handleCancelMute = (event: Event) => {
   event.stopPropagation();
-  showSuppressConfirm.value = false;
-  suppressReason.value = '';
+  showMuteConfirm.value = false;
+  muteReason.value = '';
 };
 
 // PCAP extraction panel ----------------------------------------------------
@@ -231,11 +254,11 @@ const handleClosePcap = (event: Event) => {
             <FileDown class="w-4 h-4" />
           </button>
 
-          <!-- Suppress button (all alerts with this rule) -->
+          <!-- Mute button (this rule from this source; Specter-side only) -->
           <button
             class="p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-amber-900/40 text-text-tertiary hover:text-amber-400"
-            :title="suppressLabel"
-            @click="handleSuppressClick"
+            :title="muteLabel"
+            @click="handleMuteClick"
           >
             <BellOff class="w-4 h-4" />
           </button>
@@ -281,33 +304,52 @@ const handleClosePcap = (event: Event) => {
       </div>
     </div>
 
-    <!-- Inline suppress confirmation -->
+    <!-- Inline mute confirmation -->
     <div
-      v-if="showSuppressConfirm"
+      v-if="showMuteConfirm"
       class="px-4 py-3 bg-amber-950/30 border-b border-amber-800/30"
       @click.stop
     >
       <p class="text-xs text-amber-300 mb-2">
-        {{ confirmLabel }}
+        Mute {{ muteScopeLabel }} {{ ttlLabel }}?
+        Hides it in Specter only — the alert still reaches Wazuh and stays searchable.
       </p>
+      <div class="flex items-center gap-2 mb-2">
+        <label class="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+          <input v-model="muteScopeAllSources" type="checkbox" class="accent-amber-600" />
+          Any source, not just {{ sourceLabel }}
+        </label>
+        <label class="flex items-center gap-1.5 text-xs text-text-secondary ml-3">
+          Expires
+          <select
+            v-model.number="muteTtlDays"
+            class="bg-bg-primary border border-border-primary rounded px-1.5 py-1 text-xs text-text-primary focus:outline-none focus:border-amber-600"
+          >
+            <option :value="7">7 days</option>
+            <option :value="30">30 days</option>
+            <option :value="90">90 days</option>
+            <option :value="0">never</option>
+          </select>
+        </label>
+      </div>
       <div class="flex items-center gap-2">
         <input
-          v-model="suppressReason"
+          v-model="muteReason"
           type="text"
-          placeholder="Reason (optional)"
+          placeholder="Reason (e.g. false positive, known good)"
           class="flex-1 text-xs bg-bg-primary border border-border-primary rounded px-2 py-1.5 text-text-primary placeholder-text-tertiary focus:outline-none focus:border-amber-600"
-          @keydown.enter="handleConfirmSuppress"
-          @keydown.escape="handleCancelSuppress"
+          @keydown.enter="handleConfirmMute"
+          @keydown.escape="handleCancelMute"
         />
         <button
           class="text-xs px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-white transition-colors"
-          @click="handleConfirmSuppress"
+          @click="handleConfirmMute"
         >
-          Confirm
+          Mute
         </button>
         <button
           class="text-xs px-3 py-1.5 rounded bg-bg-tertiary hover:bg-bg-tertiary/80 text-text-secondary transition-colors"
-          @click="handleCancelSuppress"
+          @click="handleCancelMute"
         >
           Cancel
         </button>
