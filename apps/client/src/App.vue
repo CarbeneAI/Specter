@@ -353,55 +353,16 @@ const handleUnmute = async (ruleId: string, srcip: string) => {
   }
 };
 
-// Handle alert suppression
-const handleSuppress = async (ruleId: string, reason: string, description: string, suricataSid?: string) => {
-  const label = suricataSid ? `Suricata SID ${suricataSid}` : `Rule ${ruleId}`;
+// NOTE: upstream suppression (POST /alerts/suppress) is intentionally NOT wired
+// to any button. That path SSHes into the Suricata sensor and the Wazuh manager
+// to disable the signature at the source, which deletes the alert from Wazuh
+// entirely. With no SSH grant configured it fails with
+// "SURICATA_SSH_HOST environment variable not configured".
+// Every quieting action in the UI is a MUTE (handleMute above): the alert still
+// ingests, still scores, still reaches Wazuh, and is reversible in one click.
+// The server endpoint remains available for an operator who deliberately
+// configures SURICATA_SSH_HOST / WAZUH_SSH_HOST and calls it directly.
 
-  // Optimistically hide alerts immediately — don't wait for the SSH round-trip
-  if (suricataSid) {
-    suppressedSuricataIds.value = new Set([...suppressedSuricataIds.value, suricataSid]);
-  } else {
-    suppressedWazuhIds.value = new Set([...suppressedWazuhIds.value, ruleId]);
-  }
-  toast.success(`${label} suppressed — applying on server...`);
-
-  try {
-    const response = await fetch(`${API_URL}/alerts/suppress`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ruleId, reason, description, suricataSid }),
-    });
-
-    const data = await response.json();
-
-    if (!data.success) {
-      // Roll back optimistic update
-      if (suricataSid) {
-        const rolled = new Set(suppressedSuricataIds.value);
-        rolled.delete(suricataSid);
-        suppressedSuricataIds.value = rolled;
-      } else {
-        const rolled = new Set(suppressedWazuhIds.value);
-        rolled.delete(ruleId);
-        suppressedWazuhIds.value = rolled;
-      }
-      toast.error(data.error || 'Failed to suppress rule');
-    }
-  } catch (err) {
-    // Roll back optimistic update on network failure
-    if (suricataSid) {
-      const rolled = new Set(suppressedSuricataIds.value);
-      rolled.delete(suricataSid);
-      suppressedSuricataIds.value = rolled;
-    } else {
-      const rolled = new Set(suppressedWazuhIds.value);
-      rolled.delete(ruleId);
-      suppressedWazuhIds.value = rolled;
-    }
-    toast.error('Failed to connect to server');
-  }
-};
 </script>
 
 <template>
@@ -459,7 +420,6 @@ const handleSuppress = async (ruleId: string, reason: string, description: strin
           :severity-filter="activeSeverityFilter"
           @select="handleSelectAlert"
           @filter="handleFilter"
-          @suppress="handleSuppress"
           @mute="handleMute"
           @dismiss="handleDismiss"
         />

@@ -25,7 +25,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', alert: WazuhAlert): void;
   (e: 'mute', ruleId: string, srcip: string, reason: string, description: string, ttlDays: number): void;
-  (e: 'suppress', ruleId: string, reason: string, description: string, suricataSid?: string): void;
   (e: 'dismiss', alert: WazuhAlert): void;
 }>();
 
@@ -105,7 +104,7 @@ const handleCancelMute = (event: Event) => {
     :alert="group.latest"
     :is-selected="selectedAlert?.id === group.latest.id"
     @select="emit('select', $event)"
-    @suppress="(ruleId: string, reason: string, description: string, suricataSid?: string) => emit('suppress', ruleId, reason, description, suricataSid)"
+    @mute="(ruleId: string, srcip: string, reason: string, description: string, ttlDays: number) => emit('mute', ruleId, srcip, reason, description, ttlDays)"
     @dismiss="emit('dismiss', $event)"
   />
 
@@ -236,7 +235,7 @@ const handleCancelMute = (event: Event) => {
         :alert="alert"
         :is-selected="selectedAlert?.id === alert.id"
         @select="emit('select', $event)"
-        @suppress="(ruleId: string, reason: string, description: string, suricataSid?: string) => emit('suppress', ruleId, reason, description, suricataSid)"
+        @mute="(ruleId: string, srcip: string, reason: string, description: string, ttlDays: number) => emit('mute', ruleId, srcip, reason, description, ttlDays)"
         @dismiss="emit('dismiss', $event)"
       />
     </div>

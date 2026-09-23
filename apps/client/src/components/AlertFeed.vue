@@ -16,7 +16,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', alert: WazuhAlert): void;
   (e: 'filter', severities: SeverityLevel[], agents: string[], groups: string[]): void;
-  (e: 'suppress', ruleId: string, reason: string, description: string, suricataSid?: string): void;
   (e: 'mute', ruleId: string, srcip: string, reason: string, description: string, ttlDays: number): void;
   (e: 'dismiss', alert: WazuhAlert): void;
 }>();
@@ -151,7 +150,6 @@ const handleClearFilters = () => {
             :selected-alert="selectedAlert"
             @select="emit('select', $event)"
             @mute="(ruleId: string, srcip: string, reason: string, description: string, ttlDays: number) => emit('mute', ruleId, srcip, reason, description, ttlDays)"
-            @suppress="(ruleId: string, reason: string, description: string, suricataSid?: string) => emit('suppress', ruleId, reason, description, suricataSid)"
             @dismiss="emit('dismiss', $event)"
           />
         </template>
@@ -164,7 +162,7 @@ const handleClearFilters = () => {
             :alert="alert"
             :is-selected="selectedAlert?.id === alert.id"
             @select="emit('select', $event)"
-            @suppress="(ruleId: string, reason: string, description: string, suricataSid?: string) => emit('suppress', ruleId, reason, description, suricataSid)"
+            @mute="(ruleId: string, srcip: string, reason: string, description: string, ttlDays: number) => emit('mute', ruleId, srcip, reason, description, ttlDays)"
             @dismiss="emit('dismiss', $event)"
           />
         </template>
