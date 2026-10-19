@@ -24,17 +24,25 @@ This avoids the need for direct access to port 9200 (which is typically localhos
 ```bash
 # In .env:
 WAZUH_DASHBOARD_URL=https://your-wazuh-host
-WAZUH_DASHBOARD_USER=admin
-WAZUH_DASHBOARD_PASSWORD=your-password
+WAZUH_DASHBOARD_USER=alert-reader
+WAZUH_DASHBOARD_PASSWORD=replace-with-alert-reader-password
 ```
+
+`alert-reader` is an example that must be provisioned; Specter does not create
+it. Use a least-privileged account with Dashboard console-proxy access to query
+`wazuh-alerts-*`, and supply that account's password. The existing runtime falls
+back to `admin` when `WAZUH_DASHBOARD_USER` is unset or empty.
 
 **Finding your Wazuh Dashboard URL:**
 - This is the URL you use to access the Wazuh web UI (e.g., `https://192.168.1.100` or `https://wazuh.example.com`)
 - Specter uses the API proxy at `/api/console/proxy` to reach the Indexer
 
-**Self-signed certificates:**
-Wazuh typically uses self-signed certificates. Specter automatically disables TLS verification
-via `NODE_TLS_REJECT_UNAUTHORIZED=0` when running through `manage.sh`.
+**Private certificates:**
+Polling and direct search verify the Wazuh HTTPS certificate and hostname by
+default. Configure `WAZUH_CA_FILE` with an absolute path to a trusted PEM CA
+bundle for a private deployment. Both launchers leave process-wide HTTPS
+verification enabled. See [Wazuh HTTPS trust](wazuh-tls.md) for migration,
+the deliberate diagnostic exception, and offline validation.
 
 ## Step 3: Configure AI Chat (Optional)
 

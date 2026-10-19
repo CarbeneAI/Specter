@@ -5,6 +5,7 @@
  * Also supports JSONL file watching and HTTP POST ingest as fallbacks
  */
 
+import { wazuhTransport } from './wazuh-transport';
 import { watch, existsSync } from 'fs';
 import { readFileSync } from 'fs';
 import { homedir } from 'os';
@@ -110,9 +111,10 @@ async function pollWazuhIndexer(): Promise<void> {
     }
 
     // Use Dashboard API proxy (port 443) since Indexer port 9200 is localhost-only
+    const transport = await wazuhTransport(WAZUH_DASHBOARD_URL!);
     const searchPath = encodeURIComponent('wazuh-alerts-*/_search');
     const response = await fetch(
-      `${WAZUH_DASHBOARD_URL}/api/console/proxy?path=${searchPath}&method=POST`,
+      `${transport.url.href.replace(/\/$/, '')}/api/console/proxy?path=${searchPath}&method=POST`,
       {
         method: 'POST',
         headers: {
@@ -121,8 +123,9 @@ async function pollWazuhIndexer(): Promise<void> {
           'osd-xsrf': 'true',
         },
         body: JSON.stringify(query),
-        // @ts-ignore - Bun supports this for self-signed certs
-        tls: { rejectUnauthorized: false },
+        // Keep credentials and the request-scoped trust policy on this endpoint.
+        redirect: 'error',
+        tls: transport.tls,
       },
     );
 
@@ -191,7 +194,7 @@ async function pollWazuhIndexer(): Promise<void> {
  */
 function startIndexerPolling(): void {
   console.log(`Starting Wazuh Indexer polling (${POLL_INTERVAL_MS / 1000}s interval)`);
-  console.log(`Dashboard API: ${WAZUH_DASHBOARD_URL}`);
+  console.log('Dashboard API: using the configured Wazuh endpoint');
 
   // Initial poll - fetch recent alerts to populate the dashboard
   pollWazuhIndexer().then(() => {

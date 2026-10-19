@@ -21,9 +21,9 @@ case "${1:-}" in
         fi
 
         echo "Starting Specter server on port $SERVER_PORT..."
-        # Start server (NODE_TLS_REJECT_UNAUTHORIZED=0 for Wazuh self-signed certs)
+        # Start server with request-scoped Wazuh trust settings.
         cd "$SCRIPT_DIR/apps/server"
-        NODE_TLS_REJECT_UNAUTHORIZED=0 bun run dev >/tmp/specter-server.log 2>&1 &
+        bun run dev >/tmp/specter-server.log 2>&1 &
         SERVER_PID=$!
 
         # Wait for server

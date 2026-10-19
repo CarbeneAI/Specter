@@ -17,7 +17,7 @@ set +a
 CLIENT_PORT="${CLIENT_PORT:-5173}"
 export PATH="/home/cgarrison/.bun/bin:$PATH"
 # Wazuh dashboard uses a self-signed cert on the LAN.
-export NODE_TLS_REJECT_UNAUTHORIZED=0
+# Configure its trust per Wazuh request; leave unrelated HTTPS verification enabled.
 
 cd "$DIR/apps/server"
 bun --watch src/index.ts &

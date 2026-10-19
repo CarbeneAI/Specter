@@ -4,6 +4,7 @@
  * Includes Wazuh Indexer search tool for Claude to query historical alerts
  */
 
+import { wazuhTransport } from './wazuh-transport';
 import { homedir } from 'os';
 import type { WazuhAlert, PAIChatMessage, PAIChatResponse } from './types';
 import {
@@ -203,9 +204,10 @@ export async function searchWazuhAlerts(params: {
     };
 
     // Use Dashboard API proxy (same pattern as alert-ingest.ts)
+    const transport = await wazuhTransport(WAZUH_DASHBOARD_URL!);
     const searchPath = encodeURIComponent('wazuh-alerts-*/_search');
     const response = await fetch(
-      `${WAZUH_DASHBOARD_URL}/api/console/proxy?path=${searchPath}&method=POST`,
+      `${transport.url.href.replace(/\/$/, '')}/api/console/proxy?path=${searchPath}&method=POST`,
       {
         method: 'POST',
         headers: {
@@ -214,8 +216,9 @@ export async function searchWazuhAlerts(params: {
           'osd-xsrf': 'true',
         },
         body: JSON.stringify(query),
-        // @ts-ignore - Bun supports this for self-signed certs
-        tls: { rejectUnauthorized: false },
+        // Keep credentials and the request-scoped trust policy on this endpoint.
+        redirect: 'error',
+        tls: transport.tls,
       },
     );
 
