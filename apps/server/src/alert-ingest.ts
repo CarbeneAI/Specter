@@ -16,6 +16,10 @@ import type { ScoringContext, ScoreBand } from './scorer';
 // In-memory alert store (last N alerts only)
 const MAX_ALERTS = 500;
 const alerts: WazuhAlert[] = [];
+// UI selection and dismissal use this ID. Retention must never reset it, and
+// overlapping ingestion batches must reserve IDs before asynchronous scoring.
+// This sequence belongs to this process only; it is not a persistent Wazuh ID.
+let nextAlertId = 1;
 
 // Frequency lookback window for the scorer's frequency-downweight signal (see scorer.ts).
 const FREQUENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -174,10 +178,10 @@ async function pollWazuhIndexer(): Promise<void> {
     // Update last poll timestamp to the newest alert
     lastPollTimestamp = hits[0]._source.timestamp;
 
-    // Assign IDs and store
-    const alertsWithIds = newAlerts.map((alert, index) => ({
+    // Reserve poll IDs from the same process sequence before scoring.
+    const alertsWithIds = newAlerts.map(alert => ({
       ...alert,
-      id: alerts.length + index + 1,
+      id: nextAlertId++,
     }));
 
     storeAlerts(await scoreAndAttach(alertsWithIds, buildScoringContext()));
@@ -239,8 +243,6 @@ function readNewAlerts(filePath: string): WazuhAlert[] {
 
       try {
         const alert = JSON.parse(line) as WazuhAlert;
-        // Add auto-incrementing ID
-        alert.id = alerts.length + newAlerts.length + 1;
         newAlerts.push(alert);
       } catch (error) {
         console.error(`Failed to parse alert: ${line.slice(0, 100)}...`, error);
@@ -306,7 +308,9 @@ function watchFile(filePath: string): void {
   const watcher = watch(filePath, (eventType) => {
     if (eventType === 'change') {
       const newAlerts = readNewAlerts(filePath);
-      scoreAndAttach(newAlerts, buildScoringContext()).then(storeAlerts);
+      addAlerts(newAlerts).catch(error => {
+        console.error('Failed to ingest alerts from file:', error);
+      });
     }
   });
 
@@ -367,16 +371,17 @@ export function getAlertStats(): AlertStats {
 }
 
 /**
- * Add alerts directly (for HTTP ingest endpoint)
+ * Shared ingestion path for JSONL watching and HTTP ingest.
  * Returns the stored alerts (scored, with IDs assigned)
  */
 export async function addAlerts(newAlerts: WazuhAlert[]): Promise<WazuhAlert[]> {
   if (newAlerts.length === 0) return [];
 
-  // Assign IDs to new alerts
-  const alertsWithIds = newAlerts.map((alert, index) => ({
+  // Reserve IDs synchronously before yielding to the scorer. Ignore incoming
+  // IDs, and leave gaps after a scoring failure instead of reusing a reservation.
+  const alertsWithIds = newAlerts.map(alert => ({
     ...alert,
-    id: alerts.length + index + 1,
+    id: nextAlertId++,
   }));
 
   // Score, then store them

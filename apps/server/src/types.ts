@@ -6,7 +6,7 @@
 import type { ScoreVerdict } from './scorer';
 
 export interface WazuhAlert {
-  id?: number;                    // Auto-incrementing ID for UI
+  id?: number;                    // Process-local UI ID; never reused during this server run
   timestamp: string;              // ISO timestamp
   rule: {
     level: number;                // 0-15 severity

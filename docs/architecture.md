@@ -45,6 +45,9 @@
 - Fallback: watches JSONL file (`WAZUH_ALERTS_PATH`) for file-based ingest
 - Accepts HTTP POST to `/alerts/ingest` for webhook-based ingest
 - Keeps last 500 alerts in memory
+- Polling and `addAlerts()` reserve numeric IDs from one counter before scoring;
+  IDs are unique for the server process lifetime and are not reused after retention.
+  [Alert identity and retention](alert-identities.md) documents restart limits.
 
 **`pai-client.ts`** - AI chat with tool use
 - Sends messages to Anthropic Claude API
@@ -101,8 +104,8 @@
 
 ```
 Wazuh Indexer
-  → HTTP GET (Dashboard API proxy, every 30s)
-  → alert-ingest.ts (normalizes, assigns IDs)
+  → HTTP POST (Dashboard API proxy, every 30s)
+  → alert-ingest.ts (normalizes, reserves IDs from the process counter, scores)
   → in-memory store (last 500 alerts)
   → WebSocket broadcast to all clients
   → Vue reactive state in browser

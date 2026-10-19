@@ -80,6 +80,13 @@ Copy `.env.example` to `.env` and configure. Required:
 | GET | /alerts/suppressed | List suppressed rules |
 | WS | /stream | WebSocket alert stream |
 
+## Alert identity
+
+Indexer polling and `addAlerts()` reserve IDs from the same process-local counter
+before asynchronous scoring. JSONL and HTTP ingestion use `addAlerts()`. Never
+derive IDs from the bounded alert store length.
+See [alert identity and retention](docs/alert-identities.md) for tests and restart limits.
+
 ## Severity Levels (Wazuh)
 
 | Level | Severity |

@@ -265,6 +265,15 @@ on the sensor changes.
 Use this for known-good noise: your own Telegram, Tailscale DERP, SSDP from the
 router.
 
+### Dismissing one alert
+
+Dismissal hides one alert by its numeric UI ID. Polling, JSONL, and HTTP ingestion
+share one ID sequence, so trimming the 500-alert memory buffer or overlapping
+scoring calls cannot reuse an ID during the same server run. These IDs reset on
+server restart. Refresh open dashboard tabs after a restart to clear old dismissal
+and selection state. See [alert identity and retention](docs/alert-identities.md)
+for the contract, regression tests, and remaining polling limits.
+
 ### Suppression (upstream, requires SSH)
 
 A **suppression** disables the signature at the source. The alert stops being
