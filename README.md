@@ -24,7 +24,7 @@ Use this repo. Fork it. Improve it. More at [carbene.ai](https://carbene.ai)
 
 - **Deterministic Scorer** - Rules-only pre-triage that scores every alert 0-100 and bands it critical/high/medium/low/noise *before* any LLM is called. No API key, no network call, so it keeps working when the AI chat is unconfigured. Every weight lives in one documented constant.
 - **Investigation Ledger** - Every AI investigation persisted as a replayable record: system prompt, each tool call and its result, final analysis, token counts, timing. Addressable by permalink. The receipt that makes autonomous response auditable after the fact.
-- **Live Alert Streaming** - WebSocket-based real-time alert feed from Wazuh Indexer (polls every 30s)
+- **Live Alert Streaming** - WebSocket-based alert feed from Wazuh Indexer (30s polling by default). See [validated polling samples, concurrency, cursor commits and limits](docs/poll-single-flight.md).
 - **Severity Color Coding** - CarbeneAI dark theme with Critical/High/Medium/Low visual hierarchy
 - **AI Security Analyst** - AI-powered chat that autonomously searches Wazuh for historical context
 - **Cloud/Local AI Toggle** - Switch between Anthropic Claude (cloud) and Ollama (local) with one click. Keep sensitive SIEM data on your network.

@@ -11,6 +11,7 @@ import { homedir } from 'os';
 import type { WazuhAlert, AlertStats } from './types';
 import { getSeverityLevel } from './types';
 import { scoreAndAttach } from './scorer';
+import { readWazuhPollResponse } from './poll-response';
 import type { ScoringContext, ScoreBand } from './scorer';
 
 // In-memory alert store (last N alerts only)
@@ -73,22 +74,15 @@ if (!WAZUH_DASHBOARD_PASSWORD) {
 // Track last poll timestamp to only fetch new alerts
 let lastPollTimestamp: string | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-/**
- * Shape of the Wazuh Indexer `_search` response we actually read from.
- * Narrow on purpose -- we only touch `hits.hits[]._source`, everything inside
- * `_source` stays loosely typed since it mirrors whatever Wazuh sends.
- */
-interface WazuhSearchResponse {
-  hits?: {
-    hits?: Array<{ _source: any }>;
-  };
-}
+let pollInFlight = false;
 
 /**
  * Poll Wazuh Indexer for new alerts
  */
 async function pollWazuhIndexer(): Promise<void> {
+  // Interval ticks are skipped, never queued, until the entire poll settles.
+  if (pollInFlight) return;
+  pollInFlight = true;
   try {
     const query: any = {
       size: 100,
@@ -131,8 +125,7 @@ async function pollWazuhIndexer(): Promise<void> {
       return;
     }
 
-    const data = await response.json() as WazuhSearchResponse;
-    const hits = data.hits?.hits || [];
+    const hits = await readWazuhPollResponse(response, lastPollTimestamp);
 
     if (hits.length === 0) return;
 
@@ -171,8 +164,8 @@ async function pollWazuhIndexer(): Promise<void> {
       })
       .reverse(); // oldest first for chronological storage
 
-    // Update last poll timestamp to the newest alert
-    lastPollTimestamp = hits[0]._source.timestamp;
+    // Snapshot the candidate, but commit it only after the full batch is stored.
+    const candidateTimestamp = hits[0]._source.timestamp;
 
     // Assign IDs and store
     const alertsWithIds = newAlerts.map((alert, index) => ({
@@ -180,9 +173,15 @@ async function pollWazuhIndexer(): Promise<void> {
       id: alerts.length + index + 1,
     }));
 
-    storeAlerts(await scoreAndAttach(alertsWithIds, buildScoringContext()));
+    const scored = await scoreAndAttach(alertsWithIds, buildScoringContext());
+    commitAlerts(scored);
+    lastPollTimestamp = candidateTimestamp;
+    // Subscriber failure cannot undo storage or make this batch replay.
+    notifyAlerts(scored);
   } catch (error) {
     console.error('Wazuh Indexer poll error:', error);
+  } finally {
+    pollInFlight = false;
   }
 }
 
@@ -190,16 +189,17 @@ async function pollWazuhIndexer(): Promise<void> {
  * Start polling Wazuh Indexer
  */
 function startIndexerPolling(): void {
+  if (pollTimer !== null) return;
   console.log(`Starting Wazuh Indexer polling (${POLL_INTERVAL_MS / 1000}s interval)`);
   console.log(`Dashboard API: ${WAZUH_DASHBOARD_URL}`);
 
+  // Register once before the initial poll can enter fetch or subscriber code.
+  pollTimer = setInterval(pollWazuhIndexer, POLL_INTERVAL_MS);
+
   // Initial poll - fetch recent alerts to populate the dashboard
   pollWazuhIndexer().then(() => {
-    console.log(`Initial poll complete (${alerts.length} alerts loaded)`);
+    console.log(`Initial poll complete (attempt finished; ${alerts.length} alerts in memory)`);
   });
-
-  // Continue polling at interval
-  pollTimer = setInterval(pollWazuhIndexer, POLL_INTERVAL_MS);
 }
 
 /**
@@ -257,7 +257,7 @@ function readNewAlerts(filePath: string): WazuhAlert[] {
 /**
  * Store alerts in memory (keeping last MAX_ALERTS)
  */
-function storeAlerts(newAlerts: WazuhAlert[]): void {
+function commitAlerts(newAlerts: WazuhAlert[]): void {
   if (newAlerts.length === 0) return;
 
   alerts.push(...newAlerts);
@@ -266,6 +266,10 @@ function storeAlerts(newAlerts: WazuhAlert[]): void {
   if (alerts.length > MAX_ALERTS) {
     alerts.splice(0, alerts.length - MAX_ALERTS);
   }
+}
+
+function notifyAlerts(newAlerts: WazuhAlert[]): void {
+  if (newAlerts.length === 0) return;
 
   console.log(`Received ${newAlerts.length} alert(s) (${alerts.length} in memory)`);
 
@@ -273,6 +277,12 @@ function storeAlerts(newAlerts: WazuhAlert[]): void {
   if (onAlertsReceived) {
     onAlertsReceived(newAlerts);
   }
+}
+
+// Store and notify an already-scored batch for public and file ingestion.
+function storeAlerts(newAlerts: WazuhAlert[]): void {
+  commitAlerts(newAlerts);
+  notifyAlerts(newAlerts);
 }
 
 /**

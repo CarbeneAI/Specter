@@ -9,5 +9,5 @@
     "lib": ["ESNext"],
     "types": ["bun-types"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "test-fixtures/**/*.ts"]
 }
