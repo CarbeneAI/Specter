@@ -271,13 +271,19 @@ A **suppression** disables the signature at the source. The alert stops being
 generated, so it is gone from Wazuh too — you lose it for hunting and for the
 scorer's frequency signal.
 
-- **Suricata SID**: updates `disable.conf` via SCP, runs `suricata-update`, reloads rules
+- **Suricata SID**: writes `disable.conf` over SSH stdin, runs `suricata-update`, reloads rules
 - **Wazuh Rule**: adds `level="0" overwrite="yes"` to `local_rules.xml`, restarts Wazuh manager
 
 Requires `SURICATA_SSH_HOST` and `WAZUH_SSH_HOST` with SSH key auth. If they are
 unset, the suppress action returns
 `SURICATA_SSH_HOST environment variable not configured` — that is by design, not
 a bug. Prefer a mute unless the signature is genuinely worthless to you.
+
+Reasons must fit one line, contain at most 1000 characters, and contain no
+control characters or `--` XML comment delimiter. Remote paths must be absolute
+or start with `~/`. Wazuh requires noninteractive sudo permission for the
+configured file and manager restart. See [suppression safety](docs/suppression-safety.md)
+for the command transport, offline checks, and partial-failure limitations.
 
 ## Alert Grouping
 

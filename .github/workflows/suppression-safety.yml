@@ -1,0 +1,41 @@
+name: Suppression safety
+
+on:
+  push:
+    paths:
+      - 'apps/server/**'
+      - '.env.example'
+      - 'README.md'
+      - 'docs/suppression-safety.md'
+      - '.github/workflows/suppression-safety.yml'
+  pull_request:
+    paths:
+      - 'apps/server/**'
+      - '.env.example'
+      - 'README.md'
+      - 'docs/suppression-safety.md'
+      - '.github/workflows/suppression-safety.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  suppression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/server
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - name: Install locked server dependencies
+        run: bun install --frozen-lockfile --no-env-file
+      - name: Test server without external services
+        run: bun test --no-env-file
+      - name: Typecheck server
+        run: bun run --no-env-file typecheck

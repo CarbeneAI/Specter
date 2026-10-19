@@ -8,7 +8,7 @@
  * Configure via environment variables:
  *   SURICATA_SSH_HOST=user@suricata-host
  *   WAZUH_SSH_HOST=user@wazuh-host
- *   SURICATA_DISABLE_CONF_PATH=~/path/to/disable.conf (optional)
+ *   SURICATA_DISABLE_CONF_REMOTE=~/path/to/disable.conf (optional)
  *   WAZUH_LOCAL_RULES_PATH=/var/ossec/etc/rules/local_rules.xml (optional)
  */
 
@@ -24,11 +24,14 @@ const WAZUH_LOCAL_RULES = process.env.WAZUH_LOCAL_RULES_PATH || '/var/ossec/etc/
 /**
  * Run a command via Bun.spawn and return stdout/stderr
  */
-async function runCommand(cmd: string[]): Promise<{ success: boolean; stdout: string; stderr: string }> {
+async function runCommand(cmd: string[], input?: string): Promise<{ success: boolean; stdout: string; stderr: string }> {
   try {
     const proc = Bun.spawn(cmd, {
       stdout: 'pipe',
       stderr: 'pipe',
+      // Configuration content is data, never part of the remote shell command.
+      // Commands without a payload do not inherit the caller's stdin.
+      stdin: input === undefined ? 'ignore' : new TextEncoder().encode(input),
     });
 
     const [stdout, stderr] = await Promise.all([
@@ -50,6 +53,19 @@ async function runCommand(cmd: string[]): Promise<{ success: boolean; stdout: st
       stderr: error instanceof Error ? error.message : 'Command failed',
     };
   }
+}
+
+/** Quote one path for the POSIX shell used by SSH; expand only a leading ~/. */
+function remotePath(path: string): string {
+  if ((!path.startsWith('/') && !path.startsWith('~/')) || /[\u0000-\u001f\u007f\u2028\u2029]/u.test(path)) {
+    throw new Error('Remote suppression path must be absolute or start with ~/ and contain no control characters');
+  }
+  const quote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
+  return path.startsWith('~/') ? `"$HOME"/${quote(path.slice(2))}` : quote(path);
+}
+
+function ssh(host: string, command: string, input?: string) {
+  return runCommand(['ssh', '-T', '--', host, command], input);
 }
 
 // ─── Suricata SID suppression ───────────────────────────────────────
@@ -107,27 +123,25 @@ async function suppressSuricataSID(
   await Bun.write(SURICATA_DISABLE_CONF_LOCAL, newContent);
   console.log(`[Suppress] Appended SID ${signatureId} to local disable.conf`);
 
-  // SCP to remote
-  const scpResult = await runCommand([
-    'scp', SURICATA_DISABLE_CONF_LOCAL, `${SURICATA_SSH_HOST}:${SURICATA_DISABLE_CONF_REMOTE}`,
-  ]);
-  if (!scpResult.success) {
-    return { success: false, error: `SCP failed: ${scpResult.stderr}` };
+  // Transfer the configuration through stdin, without SCP's remote path syntax.
+  const transferResult = await ssh(
+    SURICATA_SSH_HOST, `cat > ${remotePath(SURICATA_DISABLE_CONF_REMOTE)}`, newContent,
+  );
+  if (!transferResult.success) {
+    return { success: false, error: `Remote disable.conf write failed: ${transferResult.stderr}` };
   }
 
   // suricata-update
-  const updateResult = await runCommand([
-    'ssh', SURICATA_SSH_HOST,
+  const updateResult = await ssh(
+    SURICATA_SSH_HOST,
     'docker exec suricata suricata-update --disable-conf /etc/suricata/disable.conf',
-  ]);
+  );
   if (!updateResult.success) {
     return { success: false, error: `suricata-update failed: ${updateResult.stderr}` };
   }
 
   // Reload rules
-  const reloadResult = await runCommand([
-    'ssh', SURICATA_SSH_HOST, 'docker exec suricata kill -USR2 1',
-  ]);
+  const reloadResult = await ssh(SURICATA_SSH_HOST, 'docker exec suricata kill -USR2 1');
   if (!reloadResult.success) {
     return { success: false, error: `Rule reload failed: ${reloadResult.stderr}` };
   }
@@ -144,9 +158,7 @@ async function suppressSuricataSID(
 async function getSuppressedWazuhRules(): Promise<{ ruleId: string; description: string }[]> {
   if (!WAZUH_SSH_HOST) return [];
 
-  const result = await runCommand([
-    'ssh', WAZUH_SSH_HOST, `sudo cat ${WAZUH_LOCAL_RULES}`,
-  ]);
+  const result = await ssh(WAZUH_SSH_HOST, `sudo -n cat -- ${remotePath(WAZUH_LOCAL_RULES)}`);
   if (!result.success) return [];
 
   const rules: { ruleId: string; description: string }[] = [];
@@ -178,9 +190,7 @@ async function suppressWazuhRule(
   }
 
   // Read current local_rules.xml
-  const readResult = await runCommand([
-    'ssh', WAZUH_SSH_HOST, `sudo cat ${WAZUH_LOCAL_RULES}`,
-  ]);
+  const readResult = await ssh(WAZUH_SSH_HOST, `sudo -n cat -- ${remotePath(WAZUH_LOCAL_RULES)}`);
   if (!readResult.success) {
     return { success: false, error: `Failed to read local_rules.xml: ${readResult.stderr}` };
   }
@@ -209,20 +219,18 @@ async function suppressWazuhRule(
 
   content = content.slice(0, insertPos) + newRule + '\n\n' + content.slice(insertPos);
 
-  // Write back via SSH (use heredoc to avoid escaping issues)
-  const writeResult = await runCommand([
-    'ssh', WAZUH_SSH_HOST,
-    `sudo tee ${WAZUH_LOCAL_RULES} > /dev/null << 'SPECTER_RULES_EOF'\n${content}\nSPECTER_RULES_EOF`,
-  ]);
+  // Both new and existing XML are opaque stdin. A heredoc delimiter in either
+  // source must never turn the remaining content into remote shell commands.
+  const writeResult = await ssh(
+    WAZUH_SSH_HOST, `sudo -n tee -- ${remotePath(WAZUH_LOCAL_RULES)} > /dev/null`, content,
+  );
   if (!writeResult.success) {
     return { success: false, error: `Failed to write local_rules.xml: ${writeResult.stderr}` };
   }
   console.log(`[Suppress] Added rule ${ruleId} level=0 to local_rules.xml`);
 
   // Restart Wazuh manager to apply
-  const restartResult = await runCommand([
-    'ssh', WAZUH_SSH_HOST, 'sudo systemctl restart wazuh-manager',
-  ]);
+  const restartResult = await ssh(WAZUH_SSH_HOST, 'sudo -n systemctl restart wazuh-manager');
   if (!restartResult.success) {
     return { success: false, error: `Wazuh manager restart failed: ${restartResult.stderr}` };
   }
@@ -274,15 +282,34 @@ export async function suppressRule(
   suricataSid?: string,
 ): Promise<{ success: boolean; error?: string }> {
   // Validate format
-  if (!/^\d+$/.test(ruleId)) {
+  if (typeof ruleId !== 'string' || !/^\d+$/.test(ruleId)) {
     return { success: false, error: 'Invalid rule ID format - must be numeric' };
   }
 
+  // Validate before reading files, opening SSH, or changing local state. The
+  // shared reason must fit one disable.conf line and a valid XML comment.
+  if (typeof reason !== 'string' || reason.length > 1000 ||
+      /[\u0000-\u001f\u007f\u2028\u2029\uFFFE\uFFFF\uD800-\uDFFF]/u.test(reason) || reason.includes('--')) {
+    return { success: false, error: 'Invalid suppression reason: use one line, at most 1000 characters, without control characters or --' };
+  }
+  if (typeof description !== 'string' || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF\uD800-\uDFFF]/u.test(description)) {
+    return { success: false, error: 'Invalid rule description: must be XML-compatible text' };
+  }
+  if (suricataSid !== undefined && (typeof suricataSid !== 'string' || !/^\d+$/.test(suricataSid))) {
+    return { success: false, error: 'Invalid Suricata SID format' };
+  }
+  try {
+    remotePath(suricataSid ? SURICATA_DISABLE_CONF_REMOTE : WAZUH_LOCAL_RULES);
+    if (suricataSid && /[\u0000-\u001f\u007f]/u.test(SURICATA_DISABLE_CONF_LOCAL)) {
+      throw new Error('Local suppression path must contain no control characters');
+    }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Invalid suppression path' };
+  }
+  reason = reason.trim();
+
   // If suricataSid provided, suppress via Suricata disable.conf
   if (suricataSid) {
-    if (!/^\d+$/.test(suricataSid)) {
-      return { success: false, error: 'Invalid Suricata SID format' };
-    }
     return suppressSuricataSID(suricataSid, reason);
   }
 
