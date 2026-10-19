@@ -1,0 +1,42 @@
+name: Client Markdown safety
+
+on:
+  push:
+  pull_request:
+    paths:
+      - apps/client/**
+      - docs/markdown-safety.md
+      - README.md
+      - CLAUDE.md
+      - .gitignore
+      - .github/workflows/client-markdown-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  markdown-browser-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install pinned Bun CLI
+        run: npm install --global bun@1.3.14
+      - name: Install locked client dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Test untrusted Markdown in isolated browser fixtures
+        run: bun --no-env-file run test:markdown
+      - name: Test existing client logic
+        run: bun --no-env-file test
+      - name: Build client
+        run: bun run build

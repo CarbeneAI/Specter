@@ -373,6 +373,14 @@ For trusted alert patterns with known-safe remediations, let the AI act without 
 
 The architectural case for moving detection and response onto the agent, including the parts that break when you do and the parts that are not solved, is published in full at [endpoint-mesh](https://github.com/CarbeneAI/endpoint-mesh). No patents, no restrictions. Any open-source security project is free to implement it.
 
+## Markdown rendering safety
+
+Assistant output passes through a restrictive DOMPurify allowlist before HTML
+insertion. Normal Markdown and explicit HTTP(S) links remain; model-supplied
+images, active HTML, and other URL schemes are excluded. Follow the
+[Markdown safety guide](docs/markdown-safety.md) for the policy, browser checks,
+and limitations before changing the renderer or using a hosted deployment.
+
 ## Contributing
 
 Pull requests welcome. Please open an issue first to discuss major changes.

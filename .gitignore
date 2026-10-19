@@ -51,3 +51,10 @@ apps/client/vite.config.d.ts
 *.bak-*
 *.bak.*
 !.env.example
+
+# Browser fixture output
+/apps/client/test-results/
+/apps/client/playwright-report/
+
+# Reproduce the client sanitizer and browser fixture dependency versions
+!/apps/client/bun.lock

@@ -1,0 +1,3 @@
+[test]
+# Browser specs run through Playwright; Bun owns only the client logic tests.
+root = "./src"
