@@ -1,15 +1,8 @@
+import { resolveEndpoints } from '../lib/endpoints';
 import { ref } from 'vue';
 import type { WazuhAlert, ChatMessage, ChatResponse, QuickPrompts, AIProvider, AIProviderConfig } from '../types';
 
-function getApiUrl(): string {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:4001';
-  }
-  return 'https://wazuh-dashboard-api.home.carbeneai.com';
-}
-
-const API_URL = getApiUrl();
+const { api: API_URL } = resolveEndpoints();
 
 export function usePAIChat() {
   const messages = ref<ChatMessage[]>([]);

@@ -2,12 +2,18 @@
 
 ## System Overview
 
+The Cloud toggle follows `TRIAGE_PROVIDER` (default `claude`); the Local toggle
+selects Ollama. Only the Anthropic backend runs a Wazuh search tool loop and
+records investigations in the ledger. The CLI backend fetches optional history
+on the server before building its prompt. Ollama receives the supplied alert
+context without that lookup.
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    Browser                          │
 │  ┌─────────────────┐    ┌──────────────────────┐   │
 │  │   Alert Feed    │    │    AI Chat Panel     │   │
-│  │  (Vue 3 + WS)   │◄──►│  (Claude tool use)  │   │
+│  │  (Vue 3 + WS)   │◄──►│ (provider routing)  │   │
 │  └─────────────────┘    └──────────────────────┘   │
 └─────────────────────┬───────────────────┬───────────┘
                       │ WebSocket         │ HTTP POST
@@ -26,8 +32,8 @@
                     │               │
                     ▼               ▼
          ┌──────────────┐  ┌───────────────────┐
-         │ Wazuh SIEM   │  │  Anthropic API    │
-         │ (OpenSearch) │  │  (Claude Sonnet)  │
+         │ Wazuh SIEM   │  │   AI providers    │
+         │ (OpenSearch) │  │ CLI / Ollama / API│
          └──────────────┘  └───────────────────┘
 ```
 
@@ -47,10 +53,17 @@
 - Keeps last 500 alerts in memory
 
 **`pai-client.ts`** - AI chat with tool use
-- Sends messages to Anthropic Claude API
+- Routes CLI/Ollama requests to `triage-provider.ts`
+- Sends Anthropic-provider messages to the Messages API
 - Provides `search_wazuh_alerts` tool for autonomous Indexer queries
-- Tool use loop: up to 3 iterations of search → analysis
+- Bounded tool-use loop of search → analysis
 - Formats alert context as markdown for system prompt
+
+**`triage-provider.ts`** - Provider selection and CLI/Ollama requests
+- Defaults to Claude CLI over SSH; `CLAUDE_CLI_SSH_HOST` is required for this path
+- Injects optional server-fetched history into the CLI prompt using `alert-history.ts`
+- Falls back to Ollama after a failed CLI/SSH call
+- Sends Ollama requests to the configured local service
 
 **`suricata-suppression.ts`** - Rule suppression via SSH
 - Suricata: appends to `disable.conf`, SCPs to remote, runs `suricata-update`
@@ -89,7 +102,8 @@
 **`composables/useWebSocket.ts`** - WebSocket client
 - Auto-reconnects on disconnect
 - Ping/pong keepalive every 30s
-- URL from `VITE_WS_URL` env var or `ws://localhost:4001/stream`
+- URL from `VITE_WS_URL` or current-origin `/stream` with `ws:`/`wss:`
+- Shared [endpoint and network policy](network-boundary.md) with API callers
 
 **`composables/usePAIChat.ts`** - Chat state
 - Manages message history
@@ -113,12 +127,12 @@ Wazuh Indexer
 ```
 User selects alert + sends message
   → usePAIChat.ts POST /chat
-  → pai-client.ts builds system prompt with alert context
-  → Anthropic API (claude-sonnet-4-20250514)
-  → Tool use: search_wazuh_alerts
-    → searchWazuhAlerts() → Wazuh Indexer query
-    → results returned to Claude as tool_result
-  → Claude generates final analysis
+  → pai-client.ts resolves the requested provider
+    → claude: optional server-side history → Claude CLI over SSH
+      → failed CLI/SSH call: Ollama fallback
+    → ollama: supplied alert context → Ollama
+    → anthropic: alert context → Messages API + search_wazuh_alerts tool loop
+      → searchWazuhAlerts() → Wazuh Indexer → tool_result
   → Response displayed in chat panel
 ```
 

@@ -3,10 +3,16 @@
 **Repo:** Specter. **Status:** implemented.
 **Positioning:** working reference and teaching artifact for the CyberDefenseTactics / PurpleTeamOps "build your own Purple Team tool" course.
 
+This is the original product specification, including goals beyond the current
+implementation. The current ledger records Anthropic-provider investigations;
+CLI and Ollama responses are not recorded, and share-token routes are not
+implemented. See [the README](../README.md#investigation-ledger) and the source
+tests for current behavior.
+
 ## 1. Why
 
-Specter's AI chat is ephemeral — when Claude analyzes an alert, the reasoning, evidence,
-and tool calls vanish when the tab closes. This PRD adds two capabilities borrowed (as
+Specter's AI chat originally lost its reasoning, evidence, and tool calls when
+the tab closed. This PRD proposed two capabilities borrowed (as
 *patterns*, not code) from AiSOC (MIT):
 
 1. **Investigation Ledger** — persist every AI investigation as an auditable, replayable

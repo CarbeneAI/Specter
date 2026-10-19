@@ -60,6 +60,7 @@ const ENV_KEYS = [
   'WAZUH_DASHBOARD_URL',
   'WAZUH_DASHBOARD_USER',
   'WAZUH_DASHBOARD_PASSWORD',
+  'WAZUH_ALERTS_PATH',
   'ANTHROPIC_API_KEY',
   'WAZUH_PAI_API_KEY',
   // Force the legacy Anthropic path for the no-key degradation test. Default
@@ -72,6 +73,12 @@ const ENV_KEYS = [
   // NOTE: redirecting HOME does not work here -- Bun's os.homedir() resolves via
   // getpwuid and ignores process.env.HOME.
   'SPECTER_ENV_FILE',
+  'MUTES_DB_PATH',
+  'SPECTER_API_HOST',
+  'SPECTER_ALLOWED_HOSTS',
+  'SPECTER_CLIENT_HOST',
+  'CORS_ALLOWED_ORIGIN',
+  'CLIENT_PORT',
 ] as const;
 
 let PORT: number;
@@ -97,6 +104,8 @@ beforeAll(async () => {
   process.env.WAZUH_DASHBOARD_URL = 'https://wazuh.invalid.test';
   process.env.WAZUH_DASHBOARD_USER = 'admin';
   process.env.WAZUH_DASHBOARD_PASSWORD = 'test-password-not-real';
+  // The integration server must not watch a developer's real alert file.
+  process.env.WAZUH_ALERTS_PATH = join(tmpDir, 'no-such-alerts.jsonl');
   // The whole point of this suite: prove the app boots and the relevant routes work
   // with no Anthropic key configured at all. Both env vars getApiKey() consults must
   // go, AND HOME must point somewhere without a .claude/.env, or the file fallback
@@ -106,6 +115,8 @@ beforeAll(async () => {
   // Pin the anthropic backend so /chat still hits getApiKey() (not claude-cli/ollama).
   process.env.TRIAGE_PROVIDER = 'anthropic';
   process.env.SPECTER_ENV_FILE = join(tmpDir, 'no-such-key-file.env');
+  process.env.MUTES_DB_PATH = join(tmpDir, 'mutes.sqlite');
+  for (const key of ['SPECTER_API_HOST', 'SPECTER_ALLOWED_HOSTS', 'SPECTER_CLIENT_HOST', 'CORS_ALLOWED_ORIGIN', 'CLIENT_PORT']) delete process.env[key];
 
   originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {

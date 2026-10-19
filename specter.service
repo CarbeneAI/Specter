@@ -9,17 +9,17 @@ Type=simple
 User=YOUR_USERNAME
 Group=YOUR_USERNAME
 WorkingDirectory=/path/to/Specter
-ExecStart=/path/to/Specter/manage.sh start
-ExecStop=/path/to/Specter/manage.sh stop
+ExecStart="/path/to/Specter/start-specter.sh"
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=15
+KillMode=control-group
+KillSignal=SIGTERM
 
-# Environment - update PATH to include bun
+# Replace HOME with the service user's actual home. The launcher adds
+# ${BUN_INSTALL:-$HOME/.bun}/bin to PATH and exports the checkout's .env.
 Environment="HOME=/home/YOUR_USERNAME"
-Environment="PATH=/home/YOUR_USERNAME/.bun/bin:/usr/local/bin:/usr/bin:/bin"
-
-# Optional: load environment from .env file
-# EnvironmentFile=/path/to/Specter/.env
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 
 # Logging
 StandardOutput=journal

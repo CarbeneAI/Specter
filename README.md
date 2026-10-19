@@ -84,7 +84,7 @@ Data source identification, pseudo-detection rule generation, and attack pattern
 
 | Component | Technology |
 |-----------|-----------|
-| Runtime | Bun |
+| Runtime | Bun API and package manager; Node.js 22+ for Vite |
 | Frontend | Vue 3 + Vite + Tailwind CSS |
 | Backend | Bun HTTP + WebSocket server |
 | AI | Claude CLI over SSH (default), Ollama (local), or Anthropic API |
@@ -93,9 +93,10 @@ Data source identification, pseudo-detection rule generation, and attack pattern
 
 ## Requirements
 
-- [Bun](https://bun.sh) v1.0+
+- [Bun](https://bun.sh) v1.3.14 (tested)
+- [Node.js](https://nodejs.org) 22+ for Vite (22.22.2 tested)
 - Wazuh SIEM instance (self-hosted)
-- Claude Max on a Mac Studio reachable over SSH (default triage), **or** [Ollama](https://ollama.com) (local), **or** an [Anthropic API key](https://console.anthropic.com) with credits (`TRIAGE_PROVIDER=anthropic`)
+- An authenticated Claude CLI reachable over SSH (default triage), **or** [Ollama](https://ollama.com) (local), **or** an [Anthropic API key](https://console.anthropic.com) with credits (`TRIAGE_PROVIDER=anthropic`)
 - SSH access to Suricata/Wazuh hosts (optional, for rule suppression)
 
 ## Quick Start
@@ -119,17 +120,20 @@ Edit `.env` and set at minimum:
 WAZUH_DASHBOARD_URL=https://your-wazuh-server
 WAZUH_DASHBOARD_PASSWORD=your-admin-password
 TRIAGE_PROVIDER=claude
-# CLAUDE_CLI_SSH_HOST=user@mac-studio
+# CLAUDE_CLI_SSH_HOST=user@claude-host
 # Optional: historical correlation during triage (see below). Both are required
 # together; unset means triage runs without alert history.
 # QUERY_INDEXER_PATH=/abs/path/on/the/ssh/host/QueryIndexer.ts
-# QUERY_INDEXER_ENV=~/path/to/env-file-holding-WAZUH_DASHBOARD_PASSWORD
+# QUERY_INDEXER_ENV=/abs/path/on/the/ssh/host/env-file-holding-WAZUH_DASHBOARD_PASSWORD
 # Optional local fallback:
 # OLLAMA_URL=http://localhost:11434
 # OLLAMA_MODEL=gemma4:31b
 ```
 
-`TRIAGE_PROVIDER=claude` (the default) does **not** call `api.anthropic.com`. It sshes to the Studio and runs `claude -p` on the existing Claude Max subscription. Set `TRIAGE_PROVIDER=anthropic` only if you intentionally want the paid Messages API (requires `ANTHROPIC_API_KEY` with a non-zero balance).
+`TRIAGE_PROVIDER=claude` (the default) does **not** call `api.anthropic.com` from
+Specter. It runs `claude -p` over SSH using that host's CLI authentication. Set
+`CLAUDE_CLI_BIN` if the remote executable is not `/opt/homebrew/bin/claude`.
+Set `TRIAGE_PROVIDER=anthropic` for the paid Messages API and configure an API key.
 
 ### 3. Install dependencies
 
@@ -145,11 +149,16 @@ cd ../..
 ./manage.sh start
 ```
 
-Open http://localhost:5173
+Open http://127.0.0.1:5173
+
+The API and Vite bind to loopback by default. See the
+[network boundary and migration guide](docs/network-boundary.md) for root `.env`,
+custom ports, reverse proxies, and remote n8n access. These guards do not provide authentication.
 
 ## Configuration
 
-See [docs/setup.md](docs/setup.md) for complete setup instructions including:
+See [docs/setup.md](docs/setup.md) for connection setup, and
+[docs/deployment.md](docs/deployment.md) for service and reverse proxy setup:
 - Connecting to your Wazuh instance
 - Configuring SSH for rule suppression
 - Setting up as a systemd service
@@ -178,7 +187,9 @@ Specter's AI chat used to be ephemeral: the reasoning, the evidence, and the too
 
 It records the system prompt, every tool call with its arguments and result, the final analysis, model, token usage, and duration. `sk-ant-` patterns are scrubbed before insert as defense in depth. All queries are parameterized; the `:id` route validates UUID shape by regex before SQLite is touched at all.
 
-Ledger writes are fail-open: a SQLite failure logs and is swallowed, never breaking the chat response. Only the Anthropic path is recorded, because the Ollama path has no tool-use loop and therefore no multi-step investigation to reconstruct.
+Ledger writes are fail-open: a SQLite failure logs and is swallowed, never breaking
+the chat response. Only the Anthropic path is recorded; CLI and Ollama responses
+are not persisted in the ledger.
 
 This is the part that matters for autonomous response later. An action a machine took without asking is only defensible if you can reconstruct why it took it.
 
@@ -189,20 +200,21 @@ Full design, schema, and testing strategy: [docs/architecture-scorer-ledger.md](
 When you click an alert and use the chat panel:
 
 1. The selected alert is included as context in the system prompt
-2. **Specter runs a read-only historical lookup itself** and injects the result
-   into the prompt, so the model already knows whether this alert is new or
-   recurring before it starts reasoning (see below)
+2. With the default CLI provider and historical correlation configured,
+   **Specter runs a read-only historical lookup itself** for the selected alert
+   and injects the result into the prompt (see below)
 3. The AI structures responses to guide analyst thinking (What/Why/How/Next/Watch)
 4. With `TRIAGE_PROVIDER=anthropic`, Claude can additionally call
-   `search_wazuh_alerts` as a tool, with up to 3 iterations. The `claude` CLI
-   path and Ollama do not use tools — they get the history injected instead.
+   `search_wazuh_alerts` in a bounded tool-use loop. The CLI uses the
+   server-fetched history. Ollama receives the supplied alert context without
+   the historical lookup or Wazuh search tools.
 5. Quick actions: Analyze, Remediation, Related alerts, IOCs, MITRE ATT&CK/D3FEND mapping
 
 ### Historical correlation
 
-Set `QUERY_INDEXER_PATH` and `QUERY_INDEXER_ENV` to enable it. Before each
-triage, Specter runs a read-only `_search`/`_count` query on the ssh host and
-puts the result in the system prompt:
+Set `QUERY_INDEXER_PATH` and `QUERY_INDEXER_ENV` to absolute paths on the SSH
+host to enable it for CLI triage. With a selected alert, Specter runs a read-only
+`_search`/`_count` query on that host and puts the result in the system prompt:
 
 ```
 full history: 3458 alert(s) across 65 distinct day(s)
@@ -235,7 +247,7 @@ Server-side switch in `.env`. The chat panel **Local** toggle still forces Ollam
 
 | Provider | Backend | Cost | Notes |
 |---|---|---|---|
-| `claude` (default) | ssh + `claude -p` on Mac Studio | $0 marginal (Claude Max) | Falls back to Ollama on CLI/ssh failure. Never sets `ANTHROPIC_API_KEY` on the remote side. |
+| `claude` (default) | SSH + `claude -p` on the configured host | Your CLI plan | Falls back to Ollama on CLI/SSH failure. Never sets `ANTHROPIC_API_KEY` on the remote side. |
 | `ollama` | Local Ollama `/api/chat` | Free (your hardware) | Bun `timeout: false` so slow 31B generations survive past 300s. |
 | `anthropic` | Paid Messages API | API usage fees | Legacy path with Wazuh tool use + investigation ledger. |
 
@@ -328,7 +340,12 @@ few dozen rows.
 
 ## Running as a Service
 
-See [docs/deployment.md](docs/deployment.md) for systemd service setup.
+Use `start-specter.sh` as the foreground systemd entrypoint. It loads this
+checkout's `.env`, finds Bun from the service user's home or configured path,
+and stops both apps when the service stops or either app exits.
+Choose the system-unit template (`specter.service`) or user-unit template
+(`deploy/specter.service`), then follow [docs/deployment.md](docs/deployment.md)
+to configure paths and install it. Use `systemctl` to manage installed services.
 
 ## Companion Tools
 
@@ -376,6 +393,8 @@ The architectural case for moving detection and response onto the agent, includi
 ## Contributing
 
 Pull requests welcome. Please open an issue first to discuss major changes.
+
+The [proposed contributor roadmap](ROADMAP.md) outlines reliability work and acceptance criteria for maintainer discussion alongside the product roadmap above. Its connection-trust section identifies the original baseline and links the corresponding contribution for status review.
 
 ## License
 

@@ -2,8 +2,6 @@
 # Specter Security Dashboard Manager
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER_PORT="${PORT:-4001}"
-CLIENT_PORT="${CLIENT_PORT:-5173}"
 
 # Load .env if present
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -12,11 +10,35 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
     set +a
 fi
 
+SERVER_PORT="${PORT:-4001}"
+CLIENT_PORT="${CLIENT_PORT:-5173}"
+url_host() {
+    case "$1" in
+        0.0.0.0) echo 127.0.0.1 ;;
+        ::) echo '[::1]' ;;
+        \[*\]) printf '%s\n' "$1" ;;
+        *:*) printf '[%s]\n' "$1" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+SERVER_URL="http://$(url_host "${SPECTER_API_HOST:-127.0.0.1}"):$SERVER_PORT"
+CLIENT_URL="http://$(url_host "${SPECTER_CLIENT_HOST:-127.0.0.1}"):$CLIENT_PORT"
+
 case "${1:-}" in
     start)
+        if ! command -v node >/dev/null 2>&1 || ! NODE_VERSION="$(node --version)"; then
+            echo "Node.js 22 or later is required for Vite." >&2
+            exit 127
+        fi
+        NODE_MAJOR="${NODE_VERSION#v}"
+        NODE_MAJOR="${NODE_MAJOR%%.*}"
+        if [[ ! "$NODE_MAJOR" =~ ^[0-9]+$ ]] || (( NODE_MAJOR < 22 )); then
+            echo "Node.js 22 or later is required for Vite." >&2
+            exit 1
+        fi
         # Check if already running
         if lsof -Pi :$SERVER_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-            echo "Specter already running at http://localhost:$CLIENT_PORT"
+            echo "Specter already running at $CLIENT_URL"
             exit 0
         fi
 
@@ -28,7 +50,7 @@ case "${1:-}" in
 
         # Wait for server
         for i in {1..15}; do
-            curl -s http://localhost:$SERVER_PORT/health >/dev/null 2>&1 && break
+            curl -s "$SERVER_URL/health" >/dev/null 2>&1 && break
             sleep 1
         done
 
@@ -40,11 +62,11 @@ case "${1:-}" in
 
         # Wait for client
         for i in {1..15}; do
-            curl -s http://localhost:$CLIENT_PORT >/dev/null 2>&1 && break
+            curl -s "$CLIENT_URL" >/dev/null 2>&1 && break
             sleep 1
         done
 
-        echo "Specter running at http://localhost:$CLIENT_PORT"
+        echo "Specter running at $CLIENT_URL"
         echo "Server logs: /tmp/specter-server.log"
         echo "Client logs: /tmp/specter-client.log"
 
@@ -85,8 +107,8 @@ case "${1:-}" in
 
     status)
         if lsof -Pi :$SERVER_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-            echo "Running at http://localhost:$CLIENT_PORT"
-            echo "API at http://localhost:$SERVER_PORT"
+            echo "Running at $CLIENT_URL"
+            echo "API at $SERVER_URL"
         else
             echo "Not running"
         fi

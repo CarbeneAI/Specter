@@ -35,6 +35,7 @@ Thumbs.db
 # Bun
 bun.lockb
 bun.lock
+!/apps/server/bun.lock
 
 # Suricata local conf (generated at runtime)
 apps/server/suricata-disable.conf
@@ -46,6 +47,8 @@ apps/server/suricata-disable.conf
 # Emitted by `vue-tsc -b` alongside the real vite.config.ts
 apps/client/vite.config.js
 apps/client/vite.config.d.ts
+/apps/server/src/network-policy.js
+/apps/server/src/network-policy.d.ts
 .env.*
 *.bak
 *.bak-*

@@ -6,17 +6,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# start-specter.sh, not manage.sh: manage.sh backgrounds its children and
-# returns, which Type=simple reads as the service exiting. It also runs
-# `bun run dev` with no --env-file, so the server dies on a missing
-# WAZUH_DASHBOARD_URL. The launcher sources .env and stays in the foreground.
-ExecStart=/home/cgarrison/Specter/start-specter.sh
+# User service: %h is this user's home. Update both paths if the checkout
+# lives elsewhere. Quote ExecStart (but not WorkingDirectory) for spaces.
+WorkingDirectory=%h/Specter
+ExecStart="%h/Specter/start-specter.sh"
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=15
 KillMode=control-group
 KillSignal=SIGTERM
-Environment=PATH=/home/cgarrison/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 
 [Install]
 WantedBy=default.target

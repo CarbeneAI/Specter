@@ -6,12 +6,17 @@
 
 ---
 
+This document records the original scorer/ledger design. The current ledger
+records the Anthropic provider's investigations; CLI and Ollama responses are
+not recorded. For current provider setup and service commands, use
+[the README](../README.md) and [deployment guide](deployment.md). Code examples
+below describe the design; runtime behavior is defined by the source and tests.
+
 ## 1. System Overview & Goals
 
-Specter's AI chat panel is currently stateless: `sendChatMessage()` runs a tool-use loop
-against Claude and returns only the final text. Nothing about *how* Claude got there —
-which tool calls it made, what evidence it saw, how many tokens it burned — survives past
-the response. This feature adds two additive capabilities:
+Before the ledger, Specter's AI chat returned only the final text from its tool-use
+loop. The reasoning, evidence, and token usage did not survive the response.
+The design introduced two capabilities:
 
 1. **Deterministic Scorer** — a zero-API-key, rules-only pre-triage that scores *every*
    ingested alert (0–100, banded `critical`→`noise`) before the LLM is ever invoked. It
@@ -586,5 +591,4 @@ Bun ships a Jest-compatible test runner (`bun:test`) — zero new dependencies. 
 - `GET /ledger/not-a-uuid` → `404`, not `500`.
 
 **QA acceptance mapping:** scorer determinism ✅ (scorer.test.ts), ledger persistence + replay ✅ (ledger.test.ts + integration), no-key degradation ✅ (scorer.test.ts + integration), parameterized-query safety ✅ (ledger.test.ts SQLi round-trip test).
-
 

@@ -2,9 +2,11 @@
 
 ## Prerequisites
 
-- **Bun** v1.0+ - [Install](https://bun.sh)
+- **Bun** v1.3.14 (tested) - [Install](https://bun.sh)
+- **Node.js** 22+ for Vite (22.22.2 tested)
 - **Wazuh** self-hosted instance with Dashboard API access
-- **Anthropic API key** - [Get one](https://console.anthropic.com)
+- Optional for AI analysis: an authenticated Claude CLI reachable over SSH,
+  a local Ollama service, or an [Anthropic API key](https://console.anthropic.com)
 - Optional: Suricata IDS for SID suppression
 - Optional: SSH key auth to Wazuh/Suricata hosts
 
@@ -38,12 +40,25 @@ via `NODE_TLS_REJECT_UNAUTHORIZED=0` when running through `manage.sh`.
 
 ## Step 3: Configure AI Chat (Optional)
 
-```bash
-# In .env:
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-```
+Alert ingestion and deterministic scoring work without an AI provider. To enable
+chat, choose a provider in the root `.env`:
 
-Without this key, the server will start but the chat panel will return errors.
+| `TRIAGE_PROVIDER` | Required provider setup |
+|-------------------|-------------------------|
+| `claude` (default) | `CLAUDE_CLI_SSH_HOST=user@host` with an authenticated Claude CLI on that host |
+| `ollama` | A running Ollama service; configure `OLLAMA_URL` and `OLLAMA_MODEL` for your installation |
+| `anthropic` | `ANTHROPIC_API_KEY` or `WAZUH_PAI_API_KEY` with access to the paid Messages API |
+
+The Cloud toggle follows `TRIAGE_PROVIDER`; the Local toggle selects Ollama.
+The CLI provider also falls back to Ollama if the SSH/CLI call fails. An Anthropic
+API key is only needed for the `anthropic` provider.
+
+For CLI triage, set `CLAUDE_CLI_BIN` to the executable path on the SSH host if it
+is not `/opt/homebrew/bin/claude`.
+
+For optional historical correlation with the CLI provider, set both `QUERY_INDEXER_PATH` and
+`QUERY_INDEXER_ENV` to absolute paths on the SSH host. Do not use `~` or relative
+paths. See [the README](../README.md#historical-correlation) for details.
 
 ## Step 4: Install Dependencies
 
@@ -58,7 +73,15 @@ cd apps/client && bun install && cd ../..
 ./manage.sh start
 ```
 
-Open http://localhost:5173
+Open http://127.0.0.1:5173
+
+Loopback binds and exact browser/Host admission are now the default. Follow
+[the network migration guide](network-boundary.md) for custom ports, remote
+access, and root `.env` browser build settings.
+
+For a service that runs independently of your terminal, use the foreground
+`start-specter.sh` launcher through one of the systemd templates described in
+[the deployment guide](deployment.md). It loads the checkout's root `.env`.
 
 ## Step 6: Configure Alert Suppression (Optional)
 
@@ -112,12 +135,15 @@ You can push alerts to Specter via HTTP POST instead of (or in addition to) poll
 
 ```bash
 # POST to ingest endpoint
-curl -X POST http://localhost:4001/alerts/ingest \
+curl -X POST http://127.0.0.1:4001/alerts/ingest \
   -H "Content-Type: application/json" \
   -d '{"timestamp":"2026-01-01T00:00:00Z","rule":{"level":7,"description":"Test alert","id":"1234"},"agent":{"id":"001","name":"my-server"}}'
 ```
 
-In n8n, use an HTTP Request node pointing to `http://specter-host:4001/alerts/ingest`.
+For n8n on this host, use `http://127.0.0.1:4001/alerts/ingest`. Remote n8n
+requires an explicit API bind and exact Host allowlist plus a firewall and
+authenticated proxy. Follow [the remote access steps](network-boundary.md#remote-n8n)
+before pointing another host at the API. Headerless CLI/n8n calls remain supported.
 
 ## Troubleshooting
 

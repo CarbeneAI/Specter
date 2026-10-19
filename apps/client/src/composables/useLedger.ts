@@ -1,14 +1,8 @@
+import { resolveEndpoints } from '../lib/endpoints';
 import { ref } from 'vue';
 import type { InvestigationSummary, InvestigationDetail } from '../types';
 
-// Mirrors the getApiUrl()/API_URL pattern already used by usePAIChat.ts and
-// useWebSocket.ts -- same env var, same localhost fallback.
-function getApiUrl(): string {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-  return 'http://localhost:4001';
-}
-
-const API_URL = getApiUrl();
+const { api: API_URL } = resolveEndpoints();
 
 export function useLedger() {
   const investigations = ref<InvestigationSummary[]>([]);
@@ -22,10 +16,10 @@ export function useLedger() {
     error.value = null;
 
     try {
-      const url = new URL(`${API_URL}/ledger`);
+      const url = new URL(`${API_URL}/ledger`, window.location.origin);
       if (limit) url.searchParams.set('limit', String(limit));
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { credentials: 'include' });
       if (!response.ok) {
         error.value = `Failed to load investigations (${response.status})`;
         return [];
@@ -51,7 +45,7 @@ export function useLedger() {
     error.value = null;
 
     try {
-      const response = await fetch(`${API_URL}/ledger/${id}`);
+      const response = await fetch(`${API_URL}/ledger/${id}`, { credentials: 'include' });
 
       if (response.status === 404) {
         error.value = 'Investigation not found';

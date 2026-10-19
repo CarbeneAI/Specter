@@ -1,29 +1,74 @@
 #!/usr/bin/env bash
 # Foreground launcher for Specter (server + client) under systemd.
 #
-# Why this exists instead of `manage.sh start`: manage.sh backgrounds both
-# children and then returns, so with Type=simple systemd sees the unit exit
-# immediately and the service flaps. This stays in the foreground and lets
-# KillMode=control-group reap both children. Mirrors start-harbinger.sh.
-#
-# It also exports .env explicitly. `bun run dev` is `bun --watch src/index.ts`
-# with no --env-file, so without this the server dies at startup with
-# "WAZUH_DASHBOARD_URL environment variable is required".
-set -uo pipefail
-DIR=/home/cgarrison/Specter
-set -a
-[ -f "$DIR/.env" ] && . "$DIR/.env"
-set +a
+# Resolve paths from this checkout, including when systemd starts us elsewhere.
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "$SCRIPT_DIR/.env"
+    set +a
+fi
 CLIENT_PORT="${CLIENT_PORT:-5173}"
-export PATH="/home/cgarrison/.bun/bin:$PATH"
+SPECTER_CLIENT_HOST="${SPECTER_CLIENT_HOST:-127.0.0.1}"
+export PATH="${BUN_INSTALL:-$HOME/.bun}/bin:$PATH"
 # Wazuh dashboard uses a self-signed cert on the LAN.
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 
-cd "$DIR/apps/server"
-bun --watch src/index.ts &
+if ! command -v bun >/dev/null 2>&1; then
+    echo "Bun not found; install it or set BUN_INSTALL/PATH for the service user." >&2
+    exit 127
+fi
+if ! command -v node >/dev/null 2>&1 || ! node_version="$(node --version)"; then
+    echo "Node.js 22 or later not found; Vite requires Node for WebSocket proxy support." >&2
+    exit 127
+fi
+node_major="${node_version#v}"
+node_major="${node_major%%.*}"
+if [[ ! "$node_major" =~ ^[0-9]+$ ]] || (( node_major < 22 )); then
+    echo "Node.js 22 or later is required for Vite." >&2
+    exit 1
+fi
+for app in server client; do
+    if [[ ! -d "$SCRIPT_DIR/apps/$app" ]]; then
+        echo "Missing application directory: $SCRIPT_DIR/apps/$app" >&2
+        exit 1
+    fi
+done
 
-cd "$DIR/apps/client"
-bun ./node_modules/.bin/vite --port "$CLIENT_PORT" --host 0.0.0.0 &
+# Only signal our children; systemd's KillMode=control-group also handles any
+# descendants. Never stop unrelated Bun processes or kill by listening port.
+server_pid=
+client_pid=
+# Invoked indirectly by the EXIT trap; older ShellCheck versions cannot follow it.
+# shellcheck disable=SC2317,SC2329
+cleanup() {
+    [[ -z "$server_pid" ]] || kill "$server_pid" 2>/dev/null || true
+    [[ -z "$client_pid" ]] || kill "$client_pid" 2>/dev/null || true
+    wait 2>/dev/null || true
+}
+trap 'cleanup' EXIT
+trap 'exit 0' INT TERM
 
-# Exit (and let systemd restart) if either process dies.
-wait -n
+(cd "$SCRIPT_DIR/apps/server" && exec bun --watch src/index.ts) &
+server_pid=$!
+(cd "$SCRIPT_DIR/apps/client" && exec node ./node_modules/vite/bin/vite.js --port "$CLIENT_PORT" --host "$SPECTER_CLIENT_HOST") &
+client_pid=$!
+
+# A child can exit before we start waiting. Check both PIDs so an immediate
+# startup failure is not missed by wait -n (also unavailable on Bash 3.2).
+while kill -0 "$server_pid" 2>/dev/null && kill -0 "$client_pid" 2>/dev/null; do
+    sleep 0.2
+done
+status=0
+if ! kill -0 "$server_pid" 2>/dev/null; then
+    wait "$server_pid" || status=$?
+else
+    wait "$client_pid" || status=$?
+fi
+# Either child exiting, even successfully, leaves the service incomplete.
+# Signal-driven shutdown above stays successful; unexpected exits restart it.
+(( status != 0 )) || status=1
+exit "$status"

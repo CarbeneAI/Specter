@@ -1,12 +1,8 @@
+import { resolveEndpoints } from '../lib/endpoints';
 import { ref, onMounted, onUnmounted } from 'vue';
 import type { WazuhAlert, AlertStats, WebSocketMessage } from '../types';
 
-function getWsUrl(): string {
-  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
-  return 'ws://localhost:4001/stream';
-}
-
-const WS_URL = getWsUrl();
+const { ws: WS_URL } = resolveEndpoints();
 
 export function useWebSocket() {
   const alerts = ref<WazuhAlert[]>([]);

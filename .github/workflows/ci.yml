@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher:
+    name: Launcher (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check launcher syntax and lifecycle
+        run: |
+          /bin/bash -n start-specter.sh
+          python3 tests/test_launcher.py LauncherTests ManagerConfigTests
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Lint launcher and validate systemd units
+        run: |
+          shellcheck start-specter.sh
+          python3 tests/test_launcher.py ServiceTemplateTests
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.2
+      - name: Install server dependencies
+        working-directory: apps/server
+        run: bun install --frozen-lockfile
+      - name: Test server
+        working-directory: apps/server
+        run: bun test
+      - name: Typecheck server
+        working-directory: apps/server
+        run: bun run typecheck
+      - name: Install client dependencies
+        working-directory: apps/client
+        run: bun install
+      - name: Test client
+        working-directory: apps/client
+        run: bun test
+      - name: Build client
+        working-directory: apps/client
+        run: bun run build

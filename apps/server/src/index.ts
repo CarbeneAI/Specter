@@ -3,6 +3,7 @@
  * HTTP API + WebSocket server for real-time alert streaming
  */
 
+import { readNetworkPolicy, requestIsAllowed } from './network-policy';
 import type { WazuhAlert, PAIChatMessage } from './types';
 import {
   startAlertIngestion,
@@ -28,15 +29,11 @@ import { listInvestigations, getInvestigation } from './ledger';
 const investigationMatch = (pathname: string) =>
   pathname.match(/^\/ledger\/([0-9a-f-]{36})$/i);
 
-const PORT = parseInt(process.env.PORT || '4001');
+// Validate the boundary before ingestion or request handling starts.
+const network = readNetworkPolicy();
 
 // Store WebSocket clients
 const wsClients = new Set<any>();
-
-// Allowed origin for CORS. Set CORS_ALLOWED_ORIGIN to the URL the dashboard is
-// served from. A specific origin (not '*') is required because the client sends
-// credentials:include. Defaults to the Vite dev server for a fresh clone.
-const ALLOWED_ORIGIN = process.env.CORS_ALLOWED_ORIGIN || 'http://localhost:5173';
 
 // Start alert ingestion with WebSocket broadcast callback
 startAlertIngestion((alerts) => {
@@ -77,23 +74,27 @@ interface ChatRequestBody {
 }
 
 // Create Bun server with HTTP and WebSocket support
-const server = Bun.serve({
-  port: PORT,
+export const server = Bun.serve({
+  hostname: network.hostname,
+  port: network.port,
 
   async fetch(req: Request) {
+    if (!requestIsAllowed(req, network)) {
+      return new Response('Forbidden', { status: 403, headers: { Vary: 'Origin' } });
+    }
     const url = new URL(req.url);
 
-    // Log authenticated user from Authentik forward-auth headers (injected by Traefik).
-    // Traefik strips any forged X-Authentik-* headers before this point.
+    // Reported identity headers are unverified here. A trusted authentication
+    // proxy must strip client-supplied identity headers before setting its own.
     const akUser = req.headers.get('X-Authentik-Email') || req.headers.get('X-Authentik-Username') || '<unauthenticated>';
     console.log(`[req] ${req.method} ${url.pathname} user=${akUser}`);
 
     // CORS: specific origin required when credentials:include is used on the client.
     // Vary: Origin tells CDN/proxy caches that responses differ by origin.
     const origin = req.headers.get('Origin');
-    const corsOrigin = origin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : '';
+    const corsOrigin = origin === network.allowedOrigin ? network.allowedOrigin : '';
     const headers: Record<string, string> = {
-      'Access-Control-Allow-Origin': corsOrigin || ALLOWED_ORIGIN,
+      ...(corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin } : {}),
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Allow-Credentials': 'true',
@@ -445,6 +446,7 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Specter Dashboard Server running on http://localhost:${server.port}`);
-console.log(`WebSocket endpoint: ws://localhost:${server.port}/stream`);
-console.log(`Health check: http://localhost:${server.port}/health`);
+const displayHost = network.hostname.includes(':') ? `[${network.hostname}]` : network.hostname;
+console.log(`Specter Dashboard Server running on http://${displayHost}:${server.port}`);
+console.log(`WebSocket endpoint: ws://${displayHost}:${server.port}/stream`);
+console.log(`Health check: http://${displayHost}:${server.port}/health`);

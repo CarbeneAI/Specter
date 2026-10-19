@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { resolveEndpoints } from './lib/endpoints';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { LayoutDashboard, History } from 'lucide-vue-next';
 import AlertStats from './components/AlertStats.vue';
@@ -27,17 +28,7 @@ const { alerts, isConnected, requestFilter } = useWebSocket();
 const toast = useToast();
 
 // API URL for suppress calls
-function getApiUrl(): string {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:4001';
-  }
-  // Served from a non-localhost origin with no VITE_API_URL set: assume the API
-  // is reachable on the same host, port 4001. Set VITE_API_URL at build time to
-  // point at a different origin (e.g. behind a reverse proxy).
-  return `${window.location.protocol}//${window.location.hostname}:4001`;
-}
-const API_URL = getApiUrl();
+const { api: API_URL } = resolveEndpoints();
 
 // Suppressed rule IDs - fetched on mount, updated after each suppress
 const suppressedWazuhIds = ref<Set<string>>(new Set());
