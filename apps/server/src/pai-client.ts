@@ -208,6 +208,8 @@ export async function searchWazuhAlerts(params: {
       `${WAZUH_DASHBOARD_URL}/api/console/proxy?path=${searchPath}&method=POST`,
       {
         method: 'POST',
+        // The native deadline covers success/error body reads.
+        signal: AbortSignal.timeout(30_000),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Basic ${btoa(`${WAZUH_DASHBOARD_USER}:${WAZUH_DASHBOARD_PASSWORD}`)}`,
@@ -290,8 +292,15 @@ function formatSearchResults(searchResult: { results: any[]; total: number; erro
  */
 export async function getOllamaModels(ollamaUrl: string): Promise<string[]> {
   try {
-    const response = await fetch(`${ollamaUrl}/api/tags`);
-    if (!response.ok) return [];
+    const stopRequest = new AbortController();
+    const response = await fetch(`${ollamaUrl}/api/tags`, {
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), stopRequest.signal]),
+    });
+    if (!response.ok) {
+      // No error body is consumed here; release its network stream immediately.
+      stopRequest.abort();
+      return [];
+    }
     const data = await response.json() as any;
     return (data.models || []).map((m: any) => m.name);
   } catch {

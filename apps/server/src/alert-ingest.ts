@@ -90,6 +90,7 @@ interface WazuhSearchResponse {
  */
 async function pollWazuhIndexer(): Promise<void> {
   try {
+    const stopRequest = new AbortController();
     const query: any = {
       size: 100,
       sort: [{ timestamp: { order: 'desc' } }],
@@ -115,6 +116,8 @@ async function pollWazuhIndexer(): Promise<void> {
       `${WAZUH_DASHBOARD_URL}/api/console/proxy?path=${searchPath}&method=POST`,
       {
         method: 'POST',
+        // Covers network/body waits, not scoring or storage.
+        signal: AbortSignal.any([AbortSignal.timeout(30_000), stopRequest.signal]),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Basic ${btoa(`${WAZUH_DASHBOARD_USER}:${WAZUH_DASHBOARD_PASSWORD}`)}`,
@@ -127,6 +130,7 @@ async function pollWazuhIndexer(): Promise<void> {
     );
 
     if (!response.ok) {
+      stopRequest.abort(); // This caller does not consume the error body.
       console.error(`Wazuh Indexer poll failed: ${response.status} ${response.statusText}`);
       return;
     }
