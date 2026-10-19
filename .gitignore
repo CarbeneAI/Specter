@@ -35,6 +35,7 @@ Thumbs.db
 # Bun
 bun.lockb
 bun.lock
+!/apps/server/bun.lock
 
 # Suricata local conf (generated at runtime)
 apps/server/suricata-disable.conf

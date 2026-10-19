@@ -60,6 +60,7 @@ const ENV_KEYS = [
   'WAZUH_DASHBOARD_URL',
   'WAZUH_DASHBOARD_USER',
   'WAZUH_DASHBOARD_PASSWORD',
+  'WAZUH_ALERTS_PATH',
   'ANTHROPIC_API_KEY',
   'WAZUH_PAI_API_KEY',
   // Force the legacy Anthropic path for the no-key degradation test. Default
@@ -97,6 +98,8 @@ beforeAll(async () => {
   process.env.WAZUH_DASHBOARD_URL = 'https://wazuh.invalid.test';
   process.env.WAZUH_DASHBOARD_USER = 'admin';
   process.env.WAZUH_DASHBOARD_PASSWORD = 'test-password-not-real';
+  // The integration server must not watch a developer's real alert file.
+  process.env.WAZUH_ALERTS_PATH = join(tmpDir, 'no-such-alerts.jsonl');
   // The whole point of this suite: prove the app boots and the relevant routes work
   // with no Anthropic key configured at all. Both env vars getApiKey() consults must
   // go, AND HOME must point somewhere without a .claude/.env, or the file fallback

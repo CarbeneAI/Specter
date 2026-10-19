@@ -111,6 +111,62 @@ function parseTimeRange(timeRange: string): number {
   return 24 * 60 * 60 * 1000;
 }
 
+function isRecord(value: unknown): value is Record<string, any> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** HTTP 200 alone cannot establish complete results or an exact alert count. */
+function validateAlertSearch(data: unknown, limit: number): {
+  hits: { _source: Record<string, any> }[];
+  total: number;
+} {
+  if (!isRecord(data) || data.error !== undefined || data.timed_out !== false ||
+      (data.terminated_early !== undefined && data.terminated_early !== false)) {
+    throw new Error('Indexer search did not complete successfully');
+  }
+
+  const shards = data._shards;
+  if (!isRecord(shards) || !isCount(shards.total) || shards.total === 0 ||
+      shards.successful !== shards.total || shards.failed !== 0 ||
+      (shards.skipped !== undefined && (!isCount(shards.skipped) || shards.skipped > shards.total)) ||
+      (shards.failures !== undefined && (!Array.isArray(shards.failures) || shards.failures.length > 0))) {
+    throw new Error('Indexer search has incomplete shard results');
+  }
+
+  const envelope = data.hits;
+  if (!isRecord(envelope) || !Array.isArray(envelope.hits)) {
+    throw new Error('Indexer search returned invalid hit data');
+  }
+  const rawTotal = envelope.total;
+  const total = isCount(rawTotal) ? rawTotal :
+    isRecord(rawTotal) && rawTotal.relation === 'eq' && isCount(rawTotal.value) ? rawTotal.value : undefined;
+  if (total === undefined) {
+    throw new Error('Indexer search did not return an exact alert count');
+  }
+  if (envelope.hits.length > Math.min(total, limit) || (total > 0 && envelope.hits.length === 0)) {
+    throw new Error('Indexer alert count and returned sample are inconsistent');
+  }
+
+  for (const hit of envelope.hits) {
+    if (!isRecord(hit) || !isRecord(hit._source)) {
+      throw new Error('Indexer search returned an invalid alert source');
+    }
+    const source = hit._source;
+    // Missing optional metadata remains supported. Reject shapes that would
+    // otherwise throw during projection or model-facing formatting.
+    const mitreIds = source.rule?.mitre?.id;
+    if ((source.full_log != null && typeof source.full_log !== 'string') ||
+        (mitreIds != null && (!Array.isArray(mitreIds) || !mitreIds.every(id => typeof id === 'string')))) {
+      throw new Error('Indexer search returned invalid alert metadata');
+    }
+  }
+  return { hits: envelope.hits, total };
+}
+
 /**
  * Search Wazuh Indexer for alerts matching the given parameters
  */
@@ -193,6 +249,8 @@ export async function searchWazuhAlerts(params: {
 
     const query: any = {
       size: limit,
+      // Exact counts support the model-facing total and confirmed empty results.
+      track_total_hits: true,
       sort: [{ timestamp: { order: 'desc' } }],
       query: {
         bool: {
@@ -225,9 +283,7 @@ export async function searchWazuhAlerts(params: {
       return { results: [], total: 0, error: `Indexer query failed: ${response.status}` };
     }
 
-    const data = await response.json() as any;
-    const hits = data.hits?.hits || [];
-    const total = data.hits?.total?.value || hits.length;
+    const { hits, total } = validateAlertSearch(await response.json(), limit);
 
     const results = hits.map((hit: any) => {
       const src = hit._source;
@@ -262,7 +318,7 @@ export async function searchWazuhAlerts(params: {
 /**
  * Format search results as text for Claude tool_result
  */
-function formatSearchResults(searchResult: { results: any[]; total: number; error?: string }): string {
+export function formatSearchResults(searchResult: { results: any[]; total: number; error?: string }): string {
   if (searchResult.error) {
     return `Search error: ${searchResult.error}`;
   }
